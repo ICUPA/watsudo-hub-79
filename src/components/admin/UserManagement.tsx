@@ -12,8 +12,21 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Search, UserPlus, Edit, Trash2, Phone, User, Save } from "lucide-react";
-import { supabasePlaceholder, Profile } from "@/lib/supabase-placeholder";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+
+interface Profile {
+  id: string;
+  user_id: string;
+  wa_phone: string;
+  wa_name?: string;
+  locale: string;
+  role: 'user' | 'admin' | 'driver';
+  default_momo_phone?: string;
+  default_momo_code?: string;
+  created_at: string;
+  updated_at: string;
+}
 
 export function UserManagement() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -28,13 +41,13 @@ export function UserManagement() {
   const loadUsers = async () => {
     setLoading(true);
     try {
-      await supabasePlaceholder.from("profiles")
+      const { data, error } = await supabase
+        .from("profiles")
         .select("*")
-        .order("created_at", { ascending: false })
-        .then(({ data, error }) => {
-          if (error) throw error;
-          setUsers(data || []);
-        });
+        .order("created_at", { ascending: false });
+      
+      if (error) throw error;
+      setUsers(data || []);
     } catch (error) {
       console.error("Error loading users:", error);
       toast.error("Failed to load users");
@@ -63,21 +76,21 @@ export function UserManagement() {
     if (!updates) return;
 
     try {
-      await supabasePlaceholder.from("profiles")
+      const { error } = await supabase
+        .from("profiles")
         .update(updates)
-        .eq("id", userId)
-        .then(({ error }) => {
-          if (error) throw error;
-          
-          setUsers(prev => prev.map(user => 
-            user.id === userId ? { ...user, ...updates } : user
-          ));
-          setEditingUsers(prev => {
-            const { [userId]: _, ...rest } = prev;
-            return rest;
-          });
-          toast.success("User updated successfully");
-        });
+        .eq("id", userId);
+      
+      if (error) throw error;
+      
+      setUsers(prev => prev.map(user => 
+        user.id === userId ? { ...user, ...updates } : user
+      ));
+      setEditingUsers(prev => {
+        const { [userId]: _, ...rest } = prev;
+        return rest;
+      });
+      toast.success("User updated successfully");
     } catch (error) {
       console.error("Error updating user:", error);
       toast.error("Failed to update user");

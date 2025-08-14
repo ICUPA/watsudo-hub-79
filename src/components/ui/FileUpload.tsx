@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Upload, File } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface FileUploadProps {
   bucket: string;
@@ -22,7 +24,7 @@ export function FileUpload({ bucket, onUploaded, accept, maxSizeMB = 10 }: FileU
 
     // Check file size
     if (selectedFile.size > maxSizeMB * 1024 * 1024) {
-      alert(`File size must be less than ${maxSizeMB}MB`);
+      toast.error(`File size must be less than ${maxSizeMB}MB`);
       return;
     }
 
@@ -46,15 +48,12 @@ export function FileUpload({ bucket, onUploaded, accept, maxSizeMB = 10 }: FileU
         setUploadProgress(prev => Math.min(prev + 10, 90));
       }, 100);
 
-      // Placeholder for actual Supabase upload
-      // const { error } = await supabase.storage
-      //   .from(bucket)
-      //   .upload(path, file);
+      // Real Supabase upload
+      const { error } = await supabase.storage
+        .from(bucket)
+        .upload(path, file);
 
-      // if (error) throw error;
-
-      // Simulate successful upload
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (error) throw error;
       
       clearInterval(progressInterval);
       setUploadProgress(100);
@@ -62,9 +61,10 @@ export function FileUpload({ bucket, onUploaded, accept, maxSizeMB = 10 }: FileU
       onUploaded(path);
       setFile(null);
       setUploadProgress(0);
+      toast.success("File uploaded successfully");
     } catch (error) {
       console.error('Upload failed:', error);
-      alert('Upload failed. Please try again.');
+      toast.error('Upload failed. Please try again.');
     } finally {
       setUploading(false);
     }

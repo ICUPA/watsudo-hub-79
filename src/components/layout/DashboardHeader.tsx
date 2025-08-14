@@ -1,8 +1,11 @@
-import { Bell, Search, User } from "lucide-react";
+import { Bell, Search, User, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/hooks/useAuth";
 
 export function DashboardHeader() {
+  const { profile, signOut } = useAuth();
+
   return (
     <header className="sticky top-0 z-40 glass-card border-b border-border/20 p-4">
       <div className="flex items-center justify-between">
@@ -24,11 +27,14 @@ export function DashboardHeader() {
           
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <div className="text-sm font-medium">Admin User</div>
-              <div className="text-xs text-muted-foreground">System Administrator</div>
+              <div className="text-sm font-medium">{profile?.wa_name || 'User'}</div>
+              <div className="text-xs text-muted-foreground capitalize">{profile?.role || 'user'}</div>
             </div>
             <Button variant="ghost" size="sm" className="rounded-full">
               <User className="h-5 w-5" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={signOut} title="Sign Out">
+              <LogOut className="h-4 w-4" />
             </Button>
           </div>
         </div>
