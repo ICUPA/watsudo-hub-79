@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from "@supabase/supabase-js";
 import { toast } from "sonner";
 
-interface Profile {
+export interface Profile {
   id: string;
   user_id: string;
   wa_phone: string;
@@ -23,6 +23,7 @@ interface AuthContextType {
   loading: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updateProfile: (updates: Partial<Profile>) => Promise<boolean>;
   isAdmin: boolean;
   isDriver: boolean;
 }
@@ -38,34 +39,127 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAdmin = profile?.role === 'admin';
   const isDriver = profile?.role === 'driver';
 
-  const loadProfile = async (userId: string) => {
+  // Enhanced profile loading with fallback creation
+  const loadProfile = async (userId: string, retryCount = 0): Promise<Profile | null> => {
     try {
-      console.log('Loading profile for user ID:', userId);
+      console.log(`Loading profile for user ${userId}, attempt ${retryCount + 1}`);
+      
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('user_id', userId)
-        .maybeSingle(); // Changed from .single() to .maybeSingle()
+        .maybeSingle();
 
       if (error) {
         console.error('Error loading profile:', error);
-        return;
+        throw error;
       }
 
-      console.log('Loaded profile data:', data);
+      if (!data && retryCount === 0) {
+        // Try to create profile if it doesn't exist
+        console.log('Profile not found, attempting to create...');
+        const created = await createMissingProfile(userId);
+        if (created) {
+          return loadProfile(userId, 1);
+        }
+      }
+
+      console.log('Profile loaded:', data);
       setProfile(data);
+      return data;
     } catch (error) {
       console.error('Error loading profile:', error);
+      if (retryCount === 0) {
+        // Retry once with profile creation
+        return loadProfile(userId, 1);
+      }
+      setProfile(null);
+      return null;
     }
   };
 
-  const refreshProfile = async () => {
-    if (user) {
+  // Create profile for users who don't have one
+  const createMissingProfile = async (userId: string): Promise<boolean> => {
+    try {
+      console.log('Creating missing profile for user:', userId);
+      
+      // Get user data from auth
+      const { data: authUser, error: authError } = await supabase.auth.getUser();
+      if (authError || !authUser.user || authUser.user.id !== userId) {
+        console.error('Cannot get auth user data:', authError);
+        return false;
+      }
+
+      const userData = authUser.user;
+      const metadata = userData.user_metadata || {};
+      
+      const { error } = await supabase
+        .from('profiles')
+        .insert({
+          user_id: userId,
+          wa_phone: metadata.phone || userData.phone || '',
+          wa_name: metadata.full_name || metadata.name || userData.email?.split('@')[0] || '',
+          role: (metadata.role as 'user' | 'admin' | 'driver') || 'user',
+          locale: 'en'
+        });
+
+      if (error) {
+        console.error('Error creating profile:', error);
+        return false;
+      }
+
+      console.log('Profile created successfully');
+      return true;
+    } catch (error) {
+      console.error('Error creating missing profile:', error);
+      return false;
+    }
+  };
+
+  // Enhanced profile refresh
+  const refreshProfile = async (): Promise<void> => {
+    if (user?.id) {
       await loadProfile(user.id);
     }
   };
 
-  const signOut = async () => {
+  // Enhanced profile update with validation
+  const updateProfile = async (updates: Partial<Profile>): Promise<boolean> => {
+    if (!user?.id || !profile) {
+      toast.error('User not authenticated');
+      return false;
+    }
+
+    // Validate required fields
+    const updatedData = { ...profile, ...updates };
+    
+    try {
+      console.log('Updating profile with data:', updates);
+      
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error updating profile:', error);
+        toast.error('Failed to update profile');
+        return false;
+      }
+
+      // Update local state
+      setProfile(updatedData);
+      toast.success('Profile updated successfully');
+      return true;
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      toast.error('Failed to update profile');
+      return false;
+    }
+  };
+
+  // Enhanced sign out with proper cleanup
+  const signOut = async (): Promise<void> => {
     try {
       setLoading(true);
       
@@ -74,7 +168,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(null);
       setProfile(null);
       
-      // Then sign out from Supabase
+      // Clear any stored auth data
+      localStorage.removeItem('supabase.auth.token');
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('supabase.auth.') || key.includes('sb-')) {
+          localStorage.removeItem(key);
+        }
+      });
+      
+      // Sign out from Supabase
       const { error } = await supabase.auth.signOut({ scope: 'global' });
       
       if (error) {
@@ -82,9 +184,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         toast.error('Error signing out');
       } else {
         toast.success('Signed out successfully');
-        // Force page reload to ensure clean state
-        window.location.href = '/auth';
       }
+      
+      // Force page reload for clean state
+      window.location.href = '/auth';
     } catch (error) {
       console.error('Error signing out:', error);
       toast.error('Error signing out');
@@ -93,40 +196,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Initialize auth state
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        setTimeout(() => {
-          loadProfile(session.user.id);
-        }, 0);
+    let mounted = true;
+
+    const initializeAuth = async () => {
+      try {
+        // Get initial session
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Error getting session:', error);
+          return;
+        }
+
+        if (mounted) {
+          setSession(session);
+          setUser(session?.user ?? null);
+          
+          if (session?.user) {
+            // Load profile with retry mechanism
+            setTimeout(async () => {
+              if (mounted) {
+                await loadProfile(session.user.id);
+              }
+            }, 100);
+          }
+          
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error('Error initializing auth:', error);
+        if (mounted) {
+          setLoading(false);
+        }
       }
-      
-      setLoading(false);
-    });
+    };
+
+    initializeAuth();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+      async (event, session) => {
+        console.log('Auth state change:', event, session?.user?.id);
         
-        if (session?.user) {
-          setTimeout(() => {
-            loadProfile(session.user.id);
-          }, 0);
-        } else {
-          setProfile(null);
+        if (mounted) {
+          setSession(session);
+          setUser(session?.user ?? null);
+          
+          if (session?.user) {
+            // Load profile on sign in
+            setTimeout(async () => {
+              if (mounted) {
+                await loadProfile(session.user.id);
+              }
+            }, 100);
+          } else {
+            // Clear profile on sign out
+            setProfile(null);
+          }
+          
+          setLoading(false);
         }
-        
-        setLoading(false);
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const value = {
@@ -136,6 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     signOut,
     refreshProfile,
+    updateProfile,
     isAdmin,
     isDriver,
   };
