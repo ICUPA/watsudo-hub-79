@@ -682,20 +682,53 @@ Deno.serve(async (req) => {
   if (req.method === 'POST') {
     try {
       const body = await req.json();
-      console.log('📨 Incoming webhook:', JSON.stringify(body, null, 2));
+      console.log('📨 Incoming webhook payload:', JSON.stringify(body, null, 2));
+      
+      // Log the structure for debugging
+      console.log('Body structure check:', {
+        hasEntry: !!body.entry,
+        entryType: typeof body.entry,
+        entryLength: Array.isArray(body.entry) ? body.entry.length : 'not array'
+      });
 
       if (body.entry && Array.isArray(body.entry)) {
+        console.log(`Processing ${body.entry.length} entries`);
+        
         for (const entry of body.entry) {
+          console.log('Entry structure:', {
+            hasChanges: !!entry.changes,
+            changesType: typeof entry.changes,
+            changesLength: Array.isArray(entry.changes) ? entry.changes.length : 'not array'
+          });
+          
           if (entry.changes && Array.isArray(entry.changes)) {
             for (const change of entry.changes) {
-              if (change.value.messages && Array.isArray(change.value.messages)) {
+              console.log('Change structure:', {
+                hasValue: !!change.value,
+                hasMessages: !!change.value?.messages,
+                messagesLength: Array.isArray(change.value?.messages) ? change.value.messages.length : 'not array',
+                hasStatuses: !!change.value?.statuses,
+                statusesLength: Array.isArray(change.value?.statuses) ? change.value.statuses.length : 'not array'
+              });
+              
+              if (change.value?.messages && Array.isArray(change.value.messages)) {
                 for (const message of change.value.messages) {
-                  console.log(`🔄 Processing message from ${message.from}`);
-                  await processConversationFlow(message);
+                  console.log(`🔄 Processing message:`, {
+                    from: message.from,
+                    type: message.type,
+                    timestamp: message.timestamp
+                  });
+                  
+                  try {
+                    await processConversationFlow(message);
+                    console.log(`✅ Successfully processed message from ${message.from}`);
+                  } catch (error) {
+                    console.error(`❌ Error processing message from ${message.from}:`, error);
+                  }
                 }
               }
               
-              if (change.value.statuses && Array.isArray(change.value.statuses)) {
+              if (change.value?.statuses && Array.isArray(change.value.statuses)) {
                 for (const status of change.value.statuses) {
                   console.log('📊 Message status update:', status);
                 }
@@ -703,6 +736,8 @@ Deno.serve(async (req) => {
             }
           }
         }
+      } else {
+        console.log('⚠️ No entry array found in webhook payload');
       }
 
       return new Response('OK', { 
@@ -711,6 +746,11 @@ Deno.serve(async (req) => {
       });
     } catch (error) {
       console.error('❌ Error processing webhook:', error);
+      console.error('Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
       return new Response('Internal Server Error', { 
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'text/plain' }
