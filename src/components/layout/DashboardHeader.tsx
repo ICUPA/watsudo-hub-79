@@ -2,9 +2,11 @@ import { Bell, Search, User, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
 
 export function DashboardHeader() {
   const { profile, signOut } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <header className="sticky top-0 z-40 glass-card border-b border-border/20 p-4">
@@ -30,7 +32,13 @@ export function DashboardHeader() {
               <div className="text-sm font-medium">{profile?.wa_name || 'User'}</div>
               <div className="text-xs text-muted-foreground capitalize">{profile?.role || 'user'}</div>
             </div>
-            <Button variant="ghost" size="sm" className="rounded-full">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="rounded-full" 
+              onClick={() => navigate('/profile')}
+              title="View Profile"
+            >
               <User className="h-5 w-5" />
             </Button>
             <Button variant="ghost" size="sm" onClick={signOut} title="Sign Out">
