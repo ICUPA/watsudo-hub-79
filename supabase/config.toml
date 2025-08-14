@@ -12,3 +12,6 @@ verify_jwt = true
 
 [functions.process-vehicle-ocr]
 verify_jwt = true
+
+[functions.whatsapp-webhook]
+verify_jwt = false
