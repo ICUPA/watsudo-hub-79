@@ -261,6 +261,17 @@ async function downloadWhatsAppMedia(mediaId: string): Promise<string | null> {
 
 async function sendWhatsAppMessage(to: string, message: string): Promise<boolean> {
   try {
+    // Validate environment variables
+    if (!WHATSAPP_PHONE_NUMBER_ID || !WHATSAPP_ACCESS_TOKEN) {
+      console.error('Missing WhatsApp credentials:', { 
+        hasPhoneId: !!WHATSAPP_PHONE_NUMBER_ID, 
+        hasToken: !!WHATSAPP_ACCESS_TOKEN 
+      });
+      return false;
+    }
+
+    console.log('Sending message to:', to, 'via phone ID:', WHATSAPP_PHONE_NUMBER_ID);
+    
     const response = await fetch(`https://graph.facebook.com/v18.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`, {
       method: 'POST',
       headers: {
@@ -278,10 +289,15 @@ async function sendWhatsAppMessage(to: string, message: string): Promise<boolean
     const result = await response.json();
     
     if (response.ok) {
+      console.log('Message sent successfully:', result);
       await logWhatsAppMessage(to, 'outbound', message, result.messages?.[0]?.id, 'sent');
       return true;
     } else {
-      console.error('WhatsApp API error:', result);
+      console.error('WhatsApp API error:', { 
+        status: response.status, 
+        statusText: response.statusText,
+        result 
+      });
       await logWhatsAppMessage(to, 'outbound', message, undefined, 'failed', { error: result });
       return false;
     }
