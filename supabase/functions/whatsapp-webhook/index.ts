@@ -5,7 +5,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const VERIFY_TOKEN = 'bd0e7b6f4a2c9d83f1e57a0c6b3d48e9';
+const VERIFY_TOKEN = Deno.env.get('WHATSAPP_VERIFY_TOKEN');
 const WHATSAPP_ACCESS_TOKEN = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
 const WHATSAPP_PHONE_NUMBER_ID = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
 const WHATSAPP_APP_SECRET = Deno.env.get('WHATSAPP_APP_SECRET');
