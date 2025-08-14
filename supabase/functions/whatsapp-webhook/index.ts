@@ -8,6 +8,7 @@ const corsHeaders = {
 const VERIFY_TOKEN = 'bd0e7b6f4a2c9d83f1e57a0c6b3d48e9';
 const WHATSAPP_ACCESS_TOKEN = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
 const WHATSAPP_PHONE_NUMBER_ID = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+const WHATSAPP_APP_SECRET = Deno.env.get('WHATSAPP_APP_SECRET');
 
 // Initialize Supabase client with service role for full access
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
