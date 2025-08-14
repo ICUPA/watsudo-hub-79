@@ -54,11 +54,14 @@ export default function Profile() {
   }, [profile]);
 
   const loadVehicles = async () => {
+    const userId = profile?.user_id;
+    if (!userId) return;
+    
     try {
       const { data, error } = await supabase
         .from('vehicles')
         .select('*')
-        .eq('user_id', profile?.user_id)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
       if (error) {
