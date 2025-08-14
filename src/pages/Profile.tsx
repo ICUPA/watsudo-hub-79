@@ -73,12 +73,17 @@ export default function Profile() {
   };
 
   const handleSaveProfile = async () => {
+    if (!profile?.user_id) {
+      toast.error('User ID not available');
+      return;
+    }
+    
     setLoading(true);
     try {
       const { error } = await supabase
         .from('profiles')
         .update(profileData)
-        .eq('user_id', profile?.user_id);
+        .eq('user_id', profile.user_id);
 
       if (error) {
         toast.error('Failed to update profile');
