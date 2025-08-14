@@ -5,11 +5,17 @@ import { HubDashboard, DashboardView } from "@/components/dashboard/HubDashboard
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { User, Car, Route, ShieldCheck } from "lucide-react";
+import { User, Car, Route, ShieldCheck, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 
 const Index = () => {
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, refreshProfile } = useAuth();
   const [currentView, setCurrentView] = useState<DashboardView>("overview");
+
+  const handleRefreshProfile = async () => {
+    await refreshProfile();
+    toast.success("Profile refreshed!");
+  };
 
   if (isAdmin) {
     return <HubDashboard />;
@@ -23,13 +29,19 @@ const Index = () => {
           <DashboardHeader />
           <div className="p-6">
               <div className="space-y-6">
-                <div>
-                  <h1 className="text-3xl font-bold gradient-text mb-2">
-                    Welcome, {profile?.wa_name || 'User'}!
-                  </h1>
-                  <p className="text-muted-foreground">
-                    Your dashboard and services are ready to use.
-                  </p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h1 className="text-3xl font-bold gradient-text mb-2">
+                      Welcome, {profile?.wa_name || 'User'}!
+                    </h1>
+                    <p className="text-muted-foreground">
+                      Your dashboard and services are ready to use. Role: {profile?.role || 'loading...'}
+                    </p>
+                  </div>
+                  <Button onClick={handleRefreshProfile} variant="outline" size="sm">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh Profile
+                  </Button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

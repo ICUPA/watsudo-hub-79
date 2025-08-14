@@ -22,6 +22,7 @@ interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
   isAdmin: boolean;
   isDriver: boolean;
 }
@@ -53,6 +54,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(data);
     } catch (error) {
       console.error('Error loading profile:', error);
+    }
+  };
+
+  const refreshProfile = async () => {
+    if (user) {
+      await loadProfile(user.id);
     }
   };
 
@@ -126,6 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     profile,
     loading,
     signOut,
+    refreshProfile,
     isAdmin,
     isDriver,
   };
