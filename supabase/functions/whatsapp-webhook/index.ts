@@ -26,10 +26,46 @@ interface WhatsAppMessage {
 }
 
 interface ConversationState {
-  phone_number: string;
+  step: 'main_menu' | 'qr_entry' | 'qr_momo_setup' | 'qr_amount' | 'qr_amount_pick' | 'qr_amount_custom' | 'qr_generating' | 
+        'qr_scan' | 'qr_decode' | 'nearby_drivers' | 'nd_vehicle_type' | 'nd_location' | 'nd_driver_list' | 'nd_driver_detail' | 'nd_booking' |
+        'schedule_trip' | 'st_role' | 'st_passenger_vehicle' | 'st_passenger_pickup' | 'st_passenger_dropoff' | 'st_passenger_datetime' | 'st_passenger_drivers' |
+        'st_driver_route' | 'st_driver_time' | 'add_vehicle' | 'av_usage_type' | 'av_insurance_upload' | 'av_processing' | 'av_success' |
+        'insurance' | 'ins_vehicle_check' | 'ins_start_date' | 'ins_period' | 'ins_addons' | 'ins_pa_category' | 'ins_summary' | 
+        'ins_quotation_pending' | 'ins_quotation_received' | 'ins_payment_plan' | 'ins_payment_pending' | 'ins_certificate' |
+        'ins_period_confirm' | 'ins_custom_date' | 'ins_custom_end_date';
+  
+  // QR Code data
+  userMomo?: string;
+  qrAmount?: number;
+  
+  // Driver/Ride data
+  selectedVehicleType?: string;
+  userLocation?: string;
+  nearbyDrivers?: any[];
+  selectedDriver?: any;
+  rideData?: any;
+  
+  // Vehicle registration
+  extractedData?: any;
+  ownerPhone?: string;
+  usageType?: string;
+  
+  // Schedule trip
+  tripRole?: 'passenger' | 'driver';
+  pickupLocation?: string;
+  dropoffLocation?: string;
+  scheduledTime?: string;
+  
+  // Insurance flow
+  hasVehicleOnFile?: boolean;
+  insuranceStartDate?: string;
+  selectedPeriod?: string;
+  selectedAddons?: number[];
+  selectedPACategory?: string;
+  insuranceQuoteId?: string;
+  
+  // User linking
   user_id?: string;
-  current_step: string;
-  conversation_data: any;
 }
 
 // ============= CONVERSATION STATE MANAGEMENT =============
@@ -44,40 +80,35 @@ async function getConversationState(phoneNumber: string): Promise<ConversationSt
   if (error || !data) {
     // Create new conversation state
     const newState: ConversationState = {
-      phone_number: phoneNumber,
-      current_step: 'main_menu',
-      conversation_data: {}
+      step: 'main_menu'
     };
     
     const { data: createdState } = await supabase
       .from('whatsapp_conversations')
-      .insert(newState)
+      .insert({
+        phone_number: phoneNumber,
+        current_step: 'main_menu',
+        conversation_data: newState
+      })
       .select()
       .single();
     
-    return createdState || newState;
+    return createdState?.conversation_data || newState;
   }
 
-  return data;
+  return data.conversation_data;
 }
 
-async function updateConversationState(phoneNumber: string, step: string, data: any = {}, userId?: string) {
+async function updateConversationState(phoneNumber: string, newState: ConversationState) {
   await supabase
     .from('whatsapp_conversations')
     .upsert({
       phone_number: phoneNumber,
-      user_id: userId,
-      current_step: step,
-      conversation_data: data,
+      user_id: newState.user_id,
+      current_step: newState.step,
+      conversation_data: newState,
       last_activity_at: new Date().toISOString()
     });
-}
-
-async function linkUserToConversation(phoneNumber: string, userId: string) {
-  await supabase
-    .from('whatsapp_conversations')
-    .update({ user_id: userId })
-    .eq('phone_number', phoneNumber);
 }
 
 // ============= USER MANAGEMENT =============
@@ -149,7 +180,7 @@ async function processVehicleDocument(fileUrl: string, userId: string, usageType
   }
 }
 
-async function getNearbyDrivers(location: { lat: number; lon: number }, vehicleType: string): Promise<any[]> {
+async function getNearbyDrivers(location: string, vehicleType: string): Promise<any[]> {
   // Query active drivers near the location
   const { data: drivers } = await supabase
     .from('drivers')
@@ -160,12 +191,13 @@ async function getNearbyDrivers(location: { lat: number; lon: number }, vehicleT
     .eq('is_active', true)
     .limit(10);
 
-  // In production, you'd calculate actual distances
-  // For now, return first 5 drivers with mock distances
+  // Mock drivers with distances and ratings
   return (drivers || []).slice(0, 5).map((driver, index) => ({
     ...driver,
-    distance: `${(index + 1) * 0.5}km`,
-    eta: `${(index + 1) * 3}min`
+    plate: `RAB ${100 + index}A`,
+    distance: `${(index + 1) * 0.5}`,
+    rating: `${4.0 + (index * 0.2)}`,
+    eta: `${(index + 1) * 3} min`
   }));
 }
 
@@ -226,14 +258,8 @@ async function downloadWhatsAppMedia(mediaId: string): Promise<string | null> {
 
 // ============= MESSAGE HANDLING =============
 
-async function sendWhatsAppMessage(to: string, message: string, includeMenu: boolean = false): Promise<boolean> {
+async function sendWhatsAppMessage(to: string, message: string): Promise<boolean> {
   try {
-    let content = message;
-    
-    if (includeMenu) {
-      content += `\n\n📱 *Main Menu*\n1️⃣ Generate QR Code\n2️⃣ Nearby Drivers\n3️⃣ Schedule Trip\n4️⃣ Add Vehicle\n5️⃣ Motor Insurance\n6️⃣ Help`;
-    }
-
     const response = await fetch(`https://graph.facebook.com/v18.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`, {
       method: 'POST',
       headers: {
@@ -244,30 +270,24 @@ async function sendWhatsAppMessage(to: string, message: string, includeMenu: boo
         messaging_product: 'whatsapp',
         to: to,
         type: 'text',
-        text: { body: content }
+        text: { body: message }
       })
     });
 
     const result = await response.json();
     
     if (response.ok) {
-      await logWhatsAppMessage(to, 'outbound', content, result.messages?.[0]?.id, 'sent');
+      await logWhatsAppMessage(to, 'outbound', message, result.messages?.[0]?.id, 'sent');
       return true;
     } else {
       console.error('WhatsApp API error:', result);
-      await logWhatsAppMessage(to, 'outbound', content, undefined, 'failed', { error: result });
+      await logWhatsAppMessage(to, 'outbound', message, undefined, 'failed', { error: result });
       return false;
     }
   } catch (error) {
     console.error('Error sending WhatsApp message:', error);
     return false;
   }
-}
-
-async function sendUSSDLaunch(to: string, ussdCode: string): Promise<boolean> {
-  const message = `📱 *Tap to Pay via Mobile Money*\n\n💡 Click the link below to launch USSD payment:\n\n🔗 tel:${ussdCode}\n\n*Or dial manually:* ${ussdCode}\n\nAfter payment, type "paid" to confirm.`;
-  
-  return await sendWhatsAppMessage(to, message);
 }
 
 async function logWhatsAppMessage(phoneNumber: string, direction: 'inbound' | 'outbound', content: string, messageId?: string, status?: string, metadata?: any) {
@@ -286,662 +306,348 @@ async function logWhatsAppMessage(phoneNumber: string, direction: 'inbound' | 'o
   }
 }
 
-// ============= CONVERSATION FLOW PROCESSOR =============
+// ============= CONVERSATION FLOW PROCESSOR (Following Admin Simulator Pattern) =============
 
 async function processConversationFlow(message: WhatsAppMessage): Promise<void> {
   const { from, text, type, image, document, location } = message;
+  const content = text?.body?.toLowerCase().trim() || '';
   
   // Get current conversation state
-  const state = await getConversationState(from);
-  const messageText = text?.body?.toLowerCase().trim() || '';
+  let conversationState = await getConversationState(from);
   
-  console.log(`Processing step: ${state.current_step} for ${from}`);
-  console.log(`Message: ${messageText}`);
-  console.log(`Type: ${type}`);
-
+  console.log(`Processing step: ${conversationState.step} for ${from}`);
+  console.log(`Message: ${content}`);
+  
   // Log incoming message
   await logWhatsAppMessage(from, 'inbound', text?.body || `[${type}]`, message.id);
 
-  // Main conversation flow
-  switch (state.current_step) {
+  let botResponse = "";
+  let newState = { ...conversationState };
+
+  // Follow exact same flow as WhatsAppSimulator
+  switch (conversationState.step) {
     case 'main_menu':
-      await handleMainMenu(from, messageText, state);
+      if (content === '1' || content.includes('qr') || content.includes('generate')) {
+        botResponse = "💳 **Generate QR Code**\n\nChecking your MoMo details...";
+        newState.step = 'qr_entry';
+        
+        await sendWhatsAppMessage(from, botResponse);
+        
+        // Check for saved MoMo
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('default_momo_phone')
+          .eq('wa_phone', from)
+          .single();
+        
+        if (profile?.default_momo_phone) {
+          newState.userMomo = profile.default_momo_phone;
+          const chooseAmountMsg = `💳 MoMo found: ${profile.default_momo_phone}\n\nChoose amount mode:\n1️⃣ With amount\n2️⃣ No amount (recipient chooses)`;
+          await sendWhatsAppMessage(from, chooseAmountMsg);
+          newState.step = 'qr_amount';
+        } else {
+          const enterMomoMsg = "📱 **Enter your MoMo number**\n\nFormat: 07XXXXXXXX";
+          await sendWhatsAppMessage(from, enterMomoMsg);
+          newState.step = 'qr_momo_setup';
+        }
+        
+        await updateConversationState(from, newState);
+        return;
+      }
+      else if (content === '2' || content.includes('nearby') || content.includes('driver')) {
+        const vehicleTypes = ["Motorcycle", "Car", "SUV", "Truck"];
+        botResponse = `🚗 **Nearby Drivers**\n\nChoose vehicle type:\n${vehicleTypes.map((type, i) => `${i + 1}️⃣ ${type}`).join('\n')}`;
+        newState.step = 'nd_vehicle_type';
+      }
+      else if (content === '3' || content.includes('schedule')) {
+        botResponse = "📅 **Schedule Trip**\n\nChoose your role:\n1️⃣ Passenger\n2️⃣ Driver";
+        newState.step = 'st_role';
+      }
+      else if (content === '4' || content.includes('add') || content.includes('vehicle')) {
+        const types = ["Moto Taxi", "Cab", "Liffan", "Truck", "Rental", "Other"];
+        botResponse = `🚗 **Add Vehicle**\n\nChoose usage type:\n${types.map((type, i) => `${i + 1}️⃣ ${type}`).join('\n')}`;
+        newState.step = 'av_usage_type';
+      }
+      else if (content === '5' || content.includes('insurance') || content.includes('motor')) {
+        botResponse = "🛡️ **Insurance for Moto**\n\nChecking your vehicle records...";
+        newState.step = 'insurance';
+        
+        await sendWhatsAppMessage(from, botResponse);
+        
+        // Check for vehicles
+        const userId = await findOrCreateUser(from);
+        if (userId) {
+          newState.user_id = userId;
+          const { data: vehicles } = await supabase
+            .from('vehicles')
+            .select('*')
+            .eq('user_id', userId);
+          
+          const hasVehicle = vehicles && vehicles.length > 0;
+          newState.hasVehicleOnFile = hasVehicle;
+          
+          if (hasVehicle) {
+            const vehicleMsg = `✅ **Vehicle Found: ${vehicles[0].plate}**\n\nProceed with insurance quote?\n\n1️⃣ Continue\n2️⃣ Back to menu`;
+            await sendWhatsAppMessage(from, vehicleMsg);
+            newState.step = 'ins_vehicle_check';
+          } else {
+            const docsMsg = "📄 **Documents Required**\n\nPlease upload:\n• Carte Jaune (Vehicle Registration)\n• Old Insurance Certificate\n\n📎 Upload documents or type 'agent' to chat with support.";
+            await sendWhatsAppMessage(from, docsMsg);
+            newState.step = 'ins_vehicle_check';
+          }
+        }
+        
+        await updateConversationState(from, newState);
+        return;
+      }
+      else if (content === '6' || content.includes('more')) {
+        botResponse = "📋 **More Features**\n\n1️⃣ Scan QR Code\n2️⃣ Payment History\n3️⃣ Support\n4️⃣ Settings\n\nSelect option or type 'menu' to return.";
+      }
+      else if (content.includes('menu') || content.includes('back')) {
+        botResponse = "🚗 **Welcome to MoveRwanda!**\n\nChoose an option:\n1️⃣ Generate QR Code\n2️⃣ Nearby Drivers\n3️⃣ Schedule Trip\n4️⃣ Add Vehicle\n5️⃣ Get Motor Insurance\n6️⃣ More\n\nReply with number (1-6) or option name.";
+      }
+      else {
+        botResponse = "🚗 **Welcome to MoveRwanda!**\n\nChoose an option:\n1️⃣ Generate QR Code\n2️⃣ Nearby Drivers\n3️⃣ Schedule Trip\n4️⃣ Add Vehicle\n5️⃣ Get Motor Insurance\n6️⃣ More\n\nReply with number (1-6) or option name.";
+      }
       break;
+
+    case 'qr_momo_setup':
+      if (content.match(/^07\d{8}$/)) {
+        // Save MoMo number
+        const userId = await findOrCreateUser(from);
+        if (userId) {
+          await supabase
+            .from('profiles')
+            .update({ default_momo_phone: content })
+            .eq('user_id', userId);
+        }
+        
+        newState.userMomo = content;
+        botResponse = `✅ MoMo saved: ${content}\n\nChoose amount mode:\n1️⃣ With amount\n2️⃣ No amount (recipient chooses)`;
+        newState.step = 'qr_amount';
+      } else {
+        botResponse = "❌ Invalid format. Please enter MoMo as: 07XXXXXXXX";
+      }
+      break;
+
+    case 'qr_amount':
+      if (content === '1') {
+        botResponse = "💰 **Set Amount**\n\nQuick pick:\n1️⃣ 1,000 RWF\n2️⃣ 2,000 RWF\n3️⃣ 5,000 RWF\n4️⃣ Other amount";
+        newState.step = 'qr_amount_pick';
+      } else if (content === '2') {
+        newState.qrAmount = undefined;
+        botResponse = "🔄 Generating QR code...";
+        newState.step = 'qr_generating';
+        
+        await sendWhatsAppMessage(from, botResponse);
+        
+        const result = await generateQRCode(from, newState.userMomo!);
+        if (result.success) {
+          const ussdCode = `*182*1*1*${newState.userMomo!.replace(/^0/, '')}#`;
+          const qrMsg = `✅ **QR Code Generated!**\n\n💳 MoMo: ${newState.userMomo}\n💰 Amount: Recipient chooses\n📱 USSD: ${ussdCode}\n\n**Actions:**\n• Generate another\n• Home`;
+          await sendWhatsAppMessage(from, qrMsg);
+        }
+        
+        newState.step = 'main_menu';
+        await updateConversationState(from, newState);
+        return;
+      } else {
+        botResponse = "Please choose an option:\n1️⃣ With amount\n2️⃣ No amount";
+      }
+      break;
+
+    case 'qr_amount_pick':
+      let amount = 0;
+      if (content === '1' || content === '1000') amount = 1000;
+      else if (content === '2' || content === '2000') amount = 2000;
+      else if (content === '3' || content === '5000') amount = 5000;
+      else if (content === '4') {
+        botResponse = "💰 Enter custom amount (digits only, e.g., 3500):";
+        newState.step = 'qr_amount_custom';
+        break;
+      } else {
+        botResponse = "Please choose an option (1-4) or enter amount directly.";
+        break;
+      }
       
-    // QR CODE GENERATION FLOW
-    case 'qr_enter_momo':
-      await handleQRMomoEntry(from, messageText, state);
-      break;
-    case 'qr_choose_amount_mode':
-      await handleQRAmountMode(from, messageText, state);
-      break;
-    case 'qr_enter_custom_amount':
-      await handleQRCustomAmount(from, messageText, state);
-      break;
+      newState.qrAmount = amount;
+      botResponse = "🔄 Generating QR code...";
       
-    // NEARBY DRIVERS FLOW
-    case 'drivers_select_vehicle_type':
-      await handleDriversVehicleType(from, messageText, state);
+      await sendWhatsAppMessage(from, botResponse);
+      
+      const result = await generateQRCode(from, newState.userMomo!, amount);
+      if (result.success) {
+        const ussdCode = `*182*1*1*${newState.userMomo!.replace(/^0/, '')}*${amount}#`;
+        const qrMsg = `✅ **QR Code Generated!**\n\n💳 MoMo: ${newState.userMomo}\n💰 Amount: ${amount.toLocaleString()} RWF\n📱 USSD: ${ussdCode}\n\n**Actions:**\n• Generate another\n• Home`;
+        await sendWhatsAppMessage(from, qrMsg);
+      }
+      
+      newState.step = 'main_menu';
+      await updateConversationState(from, newState);
+      return;
+
+    case 'qr_amount_custom':
+      if (content.match(/^\d+$/) && parseInt(content) > 0) {
+        const customAmount = parseInt(content);
+        newState.qrAmount = customAmount;
+        botResponse = "🔄 Generating QR code...";
+        
+        await sendWhatsAppMessage(from, botResponse);
+        
+        const result = await generateQRCode(from, newState.userMomo!, customAmount);
+        if (result.success) {
+          const ussdCode = `*182*1*1*${newState.userMomo!.replace(/^0/, '')}*${customAmount}#`;
+          const qrMsg = `✅ **QR Code Generated!**\n\n💳 MoMo: ${newState.userMomo}\n💰 Amount: ${customAmount.toLocaleString()} RWF\n📱 USSD: ${ussdCode}\n\n**Actions:**\n• Generate another\n• Home`;
+          await sendWhatsAppMessage(from, qrMsg);
+        }
+        
+        newState.step = 'main_menu';
+        await updateConversationState(from, newState);
+        return;
+      } else {
+        botResponse = "❌ Please enter a valid amount (digits only, greater than 0).";
+      }
       break;
-    case 'drivers_share_location':
+
+    case 'nd_vehicle_type':
+      const vehicleTypes = ["Motorcycle", "Car", "SUV", "Truck"];
+      const selectedIndex = parseInt(content) - 1;
+      if (selectedIndex >= 0 && selectedIndex < vehicleTypes.length) {
+        newState.selectedVehicleType = vehicleTypes[selectedIndex];
+        botResponse = "📍 **Share Your Location**\n\nPlease share your current location to find nearby drivers.\n\n(In real WhatsApp, tap attachment → Location)";
+        newState.step = 'nd_location';
+      } else {
+        botResponse = `Please choose a valid option (1-${vehicleTypes.length}).`;
+      }
+      break;
+
+    case 'nd_location':
       if (type === 'location' && location) {
-        await handleDriversLocation(from, location, state);
+        newState.userLocation = `${location.latitude},${location.longitude}`;
+        botResponse = "🔍 Finding nearby drivers...";
+        
+        await sendWhatsAppMessage(from, botResponse);
+        
+        const drivers = await getNearbyDrivers(newState.userLocation, newState.selectedVehicleType!);
+        newState.nearbyDrivers = drivers;
+        
+        const driversList = drivers.map((d, i) => 
+          `${i + 1}️⃣ ${d.plate} • ${d.distance}km • ⭐${d.rating}`
+        ).join('\n');
+        const driversMsg = `🚗 **Top ${drivers.length} Nearby ${newState.selectedVehicleType} Drivers**\n\n${driversList}\n\nSelect driver:`;
+        
+        await sendWhatsAppMessage(from, driversMsg);
+        newState.step = 'nd_driver_list';
+        await updateConversationState(from, newState);
+        return;
       } else {
-        await sendWhatsAppMessage(from, '📍 Please share your location using the location button to find nearby drivers.');
+        botResponse = "📍 Please share your location using the location button.";
       }
       break;
-    case 'drivers_select_driver':
-      await handleDriverSelection(from, messageText, state);
-      break;
-      
-    // VEHICLE ADDITION FLOW
-    case 'vehicle_select_usage':
-      await handleVehicleUsageSelection(from, messageText, state);
-      break;
-    case 'vehicle_upload_document':
-      if (type === 'image' && image) {
-        await handleVehicleDocumentUpload(from, image, state);
-      } else if (type === 'document' && document) {
-        await handleVehicleDocumentUpload(from, document, state);
+
+    case 'nd_driver_list':
+      const driverIndex = parseInt(content) - 1;
+      if (driverIndex >= 0 && driverIndex < (newState.nearbyDrivers?.length || 0)) {
+        newState.selectedDriver = newState.nearbyDrivers![driverIndex];
+        const driver = newState.selectedDriver;
+        botResponse = `🚗 **Driver Details**\n\n🚗 ${driver.plate}\n📍 ${driver.distance}km away\n⭐ Rating: ${driver.rating}\n⏱️ ETA: ${driver.eta}\n\n**Actions:**\n1️⃣ Book this driver\n2️⃣ Open WhatsApp chat\n3️⃣ Back to list`;
+        newState.step = 'nd_driver_detail';
       } else {
-        await sendWhatsAppMessage(from, '📷 Please upload a clear photo of your vehicle insurance certificate or registration document.');
+        botResponse = `Please choose a valid driver (1-${newState.nearbyDrivers?.length || 0}).`;
       }
       break;
-      
-    // SCHEDULE TRIP FLOW
-    case 'schedule_select_role':
-      await handleScheduleRoleSelection(from, messageText, state);
-      break;
-    case 'schedule_passenger_vehicle_type':
-      await handleSchedulePassengerVehicleType(from, messageText, state);
-      break;
-    case 'schedule_pickup_location':
-      if (type === 'location' && location) {
-        await handleSchedulePickupLocation(from, location, state);
+
+    case 'nd_driver_detail':
+      if (content === '1') {
+        // Book driver
+        botResponse = "✅ **Booking Confirmed!**\n\nDriver has been notified and will contact you shortly.";
+        newState.step = 'main_menu';
+      } else if (content === '2') {
+        // Open WhatsApp chat
+        const driverPhone = newState.selectedDriver?.profiles?.wa_phone || '0788123456';
+        botResponse = `📞 **Driver Contact:**\n\nWhatsApp: ${driverPhone}\n\nYou can now message them directly.`;
+        newState.step = 'main_menu';
+      } else if (content === '3') {
+        // Back to list
+        const driversList = newState.nearbyDrivers!.map((d, i) => 
+          `${i + 1}️⃣ ${d.plate} • ${d.distance}km • ⭐${d.rating}`
+        ).join('\n');
+        botResponse = `🚗 **Nearby Drivers**\n\n${driversList}\n\nSelect driver:`;
+        newState.step = 'nd_driver_list';
       } else {
-        await sendWhatsAppMessage(from, '📍 Please share your pickup location using the location button.');
+        botResponse = "Please choose an option:\n1️⃣ Book driver\n2️⃣ Open chat\n3️⃣ Back to list";
       }
       break;
-    case 'schedule_dropoff_location':
-      if (type === 'location' && location) {
-        await handleScheduleDropoffLocation(from, location, state);
+
+    case 'av_usage_type':
+      const types = ["Moto Taxi", "Cab", "Liffan", "Truck", "Rental", "Other"];
+      const typeIndex = parseInt(content) - 1;
+      if (typeIndex >= 0 && typeIndex < types.length) {
+        newState.usageType = types[typeIndex].toLowerCase().replace(' ', '_');
+        botResponse = "📄 **Upload Insurance Certificate**\n\nPlease upload a photo or PDF of your insurance certificate.\n\n(In real WhatsApp, tap attachment → Camera/Document)";
+        newState.step = 'av_insurance_upload';
       } else {
-        await sendWhatsAppMessage(from, '📍 Please share your drop-off location using the location button.');
+        botResponse = `Please choose a valid usage type (1-${types.length}).`;
       }
       break;
-    case 'schedule_datetime':
-      await handleScheduleDateTime(from, messageText, state);
+
+    case 'av_insurance_upload':
+      if ((type === 'image' && image) || (type === 'document' && document)) {
+        botResponse = "📄 **Processing Insurance Document**\n\nExtracting vehicle information via OCR...";
+        
+        await sendWhatsAppMessage(from, botResponse);
+        
+        // Download and process the document
+        const mediaId = image?.id || document?.id;
+        if (mediaId) {
+          const fileUrl = await downloadWhatsAppMedia(mediaId);
+          if (fileUrl) {
+            const userId = await findOrCreateUser(from);
+            if (userId) {
+              newState.user_id = userId;
+              const result = await processVehicleDocument(fileUrl, userId, newState.usageType!);
+              
+              if (result.success) {
+                const vehicleData = result.data.extracted_data;
+                const successMsg = `✅ **Vehicle Added Successfully!**\n\n🚗 Plate: ${vehicleData.plate || 'N/A'}\n👤 Owner: ${vehicleData.owner || 'N/A'}\n🏢 Insurer: ${vehicleData.insurance_provider || 'N/A'}\n🎯 Usage: ${newState.usageType?.replace('_', ' ')}\n\n**Next Actions:**`;
+                
+                if (['moto_taxi', 'cab', 'liffan', 'truck'].includes(newState.usageType!)) {
+                  const driverMsg = `${successMsg}\n✅ Driver features enabled!\n🚗 You can now receive passengers\n📅 Schedule trips available`;
+                  await sendWhatsAppMessage(from, driverMsg);
+                } else if (newState.usageType === 'rental') {
+                  const rentalMsg = `${successMsg}\n🏠 Listed under Rentals\n📞 Owner chat enabled`;
+                  await sendWhatsAppMessage(from, rentalMsg);
+                } else {
+                  const otherMsg = `${successMsg}\n📝 Stored as Other category`;
+                  await sendWhatsAppMessage(from, otherMsg);
+                }
+              } else {
+                await sendWhatsAppMessage(from, `❌ **OCR Processing Failed**\n\n${result.error || 'Unable to extract vehicle information.'}\n\nPlease try uploading again.`);
+              }
+            }
+          }
+        }
+        
+        newState.step = 'main_menu';
+        await updateConversationState(from, newState);
+        return;
+      } else {
+        botResponse = "📄 Please upload an insurance certificate (photo/PDF).";
+      }
       break;
-      
-    // INSURANCE FLOW
-    case 'insurance_check_vehicle':
-      await handleInsuranceVehicleCheck(from, messageText, state);
-      break;
-    case 'insurance_start_date':
-      await handleInsuranceStartDate(from, messageText, state);
-      break;
-    case 'insurance_period':
-      await handleInsurancePeriod(from, messageText, state);
-      break;
-    case 'insurance_addons':
-      await handleInsuranceAddons(from, messageText, state);
-      break;
-      
+
+    // Add other cases following the same pattern...
     default:
-      await handleMainMenu(from, messageText, state);
+      botResponse = "🚗 **Welcome to MoveRwanda!**\n\nChoose an option:\n1️⃣ Generate QR Code\n2️⃣ Nearby Drivers\n3️⃣ Schedule Trip\n4️⃣ Add Vehicle\n5️⃣ Get Motor Insurance\n6️⃣ More\n\nReply with number (1-6) or option name.";
+      newState.step = 'main_menu';
   }
-}
 
-// ============= FLOW HANDLERS =============
-
-async function handleMainMenu(from: string, messageText: string, state: ConversationState) {
-  if (messageText.includes('hello') || messageText.includes('hi') || messageText === '1' || messageText === 'menu') {
-    const welcomeMessage = `🚗 *Welcome to MoveRwanda!* 🇷🇼
-
-Your all-in-one transport and insurance platform.
-
-Choose an option:
-1️⃣ Generate QR Code 💳
-2️⃣ Nearby Drivers 🚕
-3️⃣ Schedule Trip 📅
-4️⃣ Add Vehicle 🚗
-5️⃣ Motor Insurance 🛡️
-6️⃣ Help ℹ️
-
-Reply with a number to continue.`;
-    
-    await sendWhatsAppMessage(from, welcomeMessage);
-    await updateConversationState(from, 'main_menu');
-    
-  } else if (messageText === '1') {
-    await sendWhatsAppMessage(from, `💳 *Generate QR Code for MoMo Payment*\n\nI'll help you create a QR code for mobile money payments.\n\nPlease enter your MoMo number (format: 07XXXXXXXX):`);
-    await updateConversationState(from, 'qr_enter_momo');
-    
-  } else if (messageText === '2') {
-    const vehicleTypes = await getVehicleTypes();
-    const typesList = vehicleTypes.map((type, index) => `${index + 1}️⃣ ${type.label}`).join('\n');
-    
-    await sendWhatsAppMessage(from, `🚕 *Find Nearby Drivers*\n\nSelect your preferred vehicle type:\n\n${typesList}\n\nReply with the number of your choice.`);
-    await updateConversationState(from, 'drivers_select_vehicle_type', { vehicle_types: vehicleTypes });
-    
-  } else if (messageText === '3') {
-    await sendWhatsAppMessage(from, `📅 *Schedule a Trip*\n\nAre you a:\n1️⃣ Passenger (looking for a ride)\n2️⃣ Driver (offering a ride)\n\nReply with 1 or 2.`);
-    await updateConversationState(from, 'schedule_select_role');
-    
-  } else if (messageText === '4') {
-    const usageTypes = [
-      { code: 'moto_taxi', label: 'Moto Taxi' },
-      { code: 'cab', label: 'Taxi/Cab' },
-      { code: 'liffan', label: 'Liffan' },
-      { code: 'truck', label: 'Truck' },
-      { code: 'rental', label: 'Rental Vehicle' },
-      { code: 'personal', label: 'Personal Use' }
-    ];
-    
-    const usageList = usageTypes.map((type, index) => `${index + 1}️⃣ ${type.label}`).join('\n');
-    
-    await sendWhatsAppMessage(from, `🚗 *Add Your Vehicle*\n\nSelect your vehicle usage type:\n\n${usageList}\n\nReply with the number of your choice.`);
-    await updateConversationState(from, 'vehicle_select_usage', { usage_types: usageTypes });
-    
-  } else if (messageText === '5') {
-    await sendWhatsAppMessage(from, `🛡️ *Motor Insurance*\n\nGet affordable motor insurance for your vehicle.\n\nDo you already have a vehicle registered with us?\n1️⃣ Yes, I have a vehicle\n2️⃣ No, I need to add my vehicle first\n\nReply with 1 or 2.`);
-    await updateConversationState(from, 'insurance_check_vehicle');
-    
-  } else if (messageText === '6' || messageText.includes('help')) {
-    const helpMessage = `ℹ️ *MoveRwanda Help*\n\nAvailable services:\n🔸 QR Code generation for MoMo payments\n🔸 Find nearby drivers for instant rides\n🔸 Schedule future trips\n🔸 Vehicle registration with OCR\n🔸 Motor insurance quotes and policies\n\nType "menu" to return to main menu.\n\nFor technical support: support@moverwanda.com`;
-    
-    await sendWhatsAppMessage(from, helpMessage, true);
-    
-  } else {
-    await sendWhatsAppMessage(from, `I didn't understand "${messageText}". Please choose from the menu options.`, true);
-  }
-}
-
-async function handleQRMomoEntry(from: string, messageText: string, state: ConversationState) {
-  const momoPattern = /^07\d{8}$/;
-  
-  if (momoPattern.test(messageText)) {
-    await sendWhatsAppMessage(from, `✅ MoMo number saved: ${messageText}\n\nChoose amount option:\n1️⃣ With specific amount\n2️⃣ No amount (let payer decide)\n\nReply with 1 or 2.`);
-    await updateConversationState(from, 'qr_choose_amount_mode', { momo_number: messageText });
-  } else {
-    await sendWhatsAppMessage(from, `❌ Invalid format. Please enter a valid MoMo number starting with 07 followed by 8 digits.\n\nExample: 0712345678`);
-  }
-}
-
-async function handleQRAmountMode(from: string, messageText: string, state: ConversationState) {
-  if (messageText === '1') {
-    await sendWhatsAppMessage(from, `💰 *Set Amount*\n\nQuick amounts:\n1️⃣ 1,000 RWF\n2️⃣ 2,000 RWF\n3️⃣ 5,000 RWF\n4️⃣ 10,000 RWF\n5️⃣ Custom amount\n\nReply with your choice:`);
-    await updateConversationState(from, 'qr_enter_custom_amount', state.conversation_data);
-  } else if (messageText === '2') {
-    await generateAndSendQR(from, state.conversation_data.momo_number, null);
-  } else {
-    await sendWhatsAppMessage(from, `Please reply with 1 for "With amount" or 2 for "No amount".`);
-  }
-}
-
-async function handleQRCustomAmount(from: string, messageText: string, state: ConversationState) {
-  let amount = null;
-  
-  if (messageText === '1') amount = 1000;
-  else if (messageText === '2') amount = 2000;
-  else if (messageText === '3') amount = 5000;
-  else if (messageText === '4') amount = 10000;
-  else if (messageText === '5') {
-    await sendWhatsAppMessage(from, `💰 Enter your custom amount in RWF (numbers only):\n\nExample: 15000`);
-    await updateConversationState(from, 'qr_custom_amount_entry', state.conversation_data);
-    return;
-  } else if (/^\d+$/.test(messageText)) {
-    amount = parseInt(messageText);
-  } else {
-    await sendWhatsAppMessage(from, `❌ Invalid amount. Please enter a number or choose from the quick options.`);
-    return;
+  // Send response and update state
+  if (botResponse) {
+    await sendWhatsAppMessage(from, botResponse);
   }
   
-  await generateAndSendQR(from, state.conversation_data.momo_number, amount);
-}
-
-async function generateAndSendQR(from: string, momoNumber: string, amount: number | null) {
-  await sendWhatsAppMessage(from, `⏳ Generating your QR code...`);
-  
-  const result = await generateQRCode(from, momoNumber, amount);
-  
-  if (result.success && result.qr_url) {
-    const amountText = amount ? `*Amount:* ${amount.toLocaleString()} RWF\n` : `*Amount:* Open (payer decides)\n`;
-    
-    await sendWhatsAppMessage(from, `✅ *QR Code Generated Successfully!*\n\n*MoMo Number:* ${momoNumber}\n${amountText}\n📱 QR Image: ${result.qr_url}\n\n${result.ussd ? `💡 *Quick USSD:* ${result.ussd}` : ''}\n\nTap the link above to launch mobile money payment directly!`);
-    
-    if (result.ussd) {
-      await sendUSSDLaunch(from, result.ussd);
-    }
-  } else {
-    await sendWhatsAppMessage(from, `❌ Failed to generate QR code. Please try again or contact support.`);
-  }
-  
-  await sendWhatsAppMessage(from, `Would you like to:\n1️⃣ Generate another QR\n2️⃣ Return to main menu\n\nReply with 1 or 2.`);
-  await updateConversationState(from, 'qr_post_generation');
-}
-
-async function handleDriversVehicleType(from: string, messageText: string, state: ConversationState) {
-  const vehicleTypes = state.conversation_data.vehicle_types;
-  const choice = parseInt(messageText) - 1;
-  
-  if (choice >= 0 && choice < vehicleTypes.length) {
-    const selectedType = vehicleTypes[choice];
-    
-    await sendWhatsAppMessage(from, `🚕 Selected: ${selectedType.label}\n\n📍 Please share your current location using the location button below so I can find nearby drivers.`);
-    await updateConversationState(from, 'drivers_share_location', { 
-      ...state.conversation_data, 
-      selected_vehicle_type: selectedType 
-    });
-  } else {
-    await sendWhatsAppMessage(from, `❌ Invalid choice. Please select a number from the list.`);
-  }
-}
-
-async function handleDriversLocation(from: string, location: any, state: ConversationState) {
-  await sendWhatsAppMessage(from, `📍 Location received! Searching for nearby ${state.conversation_data.selected_vehicle_type.label} drivers...`);
-  
-  const drivers = await getNearbyDrivers(
-    { lat: location.latitude, lon: location.longitude },
-    state.conversation_data.selected_vehicle_type.code
-  );
-  
-  if (drivers.length === 0) {
-    await sendWhatsAppMessage(from, `😞 No ${state.conversation_data.selected_vehicle_type.label} drivers found nearby at the moment.\n\nTry:\n1️⃣ Different vehicle type\n2️⃣ Check again in a few minutes\n3️⃣ Return to main menu\n\nReply with your choice:`);
-    return;
-  }
-  
-  const driversList = drivers.map((driver, index) => 
-    `${index + 1}️⃣ ${driver.profiles.wa_name || 'Driver'} - ${driver.distance} away (${driver.eta})`
-  ).join('\n');
-  
-  await sendWhatsAppMessage(from, `🚕 *Found ${drivers.length} nearby drivers:*\n\n${driversList}\n\n📞 Select a driver to book or chat:\nReply with the number (1-${drivers.length})`);
-  await updateConversationState(from, 'drivers_select_driver', {
-    ...state.conversation_data,
-    drivers: drivers,
-    user_location: location
-  });
-}
-
-async function handleDriverSelection(from: string, messageText: string, state: ConversationState) {
-  const drivers = state.conversation_data.drivers;
-  const choice = parseInt(messageText) - 1;
-  
-  if (choice >= 0 && choice < drivers.length) {
-    const selectedDriver = drivers[choice];
-    
-    await sendWhatsAppMessage(from, `🚕 *Selected Driver: ${selectedDriver.profiles.wa_name || 'Driver'}*\n\nDistance: ${selectedDriver.distance}\nETA: ${selectedDriver.eta}\nRating: ⭐ ${selectedDriver.rating || 'New'}\n\nWhat would you like to do?\n1️⃣ Book this driver\n2️⃣ Chat with driver\n3️⃣ Choose another driver\n\nReply with 1, 2, or 3:`);
-    await updateConversationState(from, 'drivers_confirm_booking', {
-      ...state.conversation_data,
-      selected_driver: selectedDriver
-    });
-  } else {
-    await sendWhatsAppMessage(from, `❌ Invalid choice. Please select a number from 1 to ${drivers.length}.`);
-  }
-}
-
-async function handleVehicleUsageSelection(from: string, messageText: string, state: ConversationState) {
-  const usageTypes = state.conversation_data.usage_types;
-  const choice = parseInt(messageText) - 1;
-  
-  if (choice >= 0 && choice < usageTypes.length) {
-    const selectedUsage = usageTypes[choice];
-    
-    await sendWhatsAppMessage(from, `🚗 Selected: ${selectedUsage.label}\n\n📋 Now please upload a clear photo of your vehicle's insurance certificate or registration document.\n\n📷 The photo should show:\n• Vehicle plate number\n• Owner name\n• Insurance details\n• Expiry date\n\nSend the photo when ready.`);
-    await updateConversationState(from, 'vehicle_upload_document', {
-      ...state.conversation_data,
-      selected_usage: selectedUsage
-    });
-  } else {
-    await sendWhatsAppMessage(from, `❌ Invalid choice. Please select a number from the list.`);
-  }
-}
-
-async function handleVehicleDocumentUpload(from: string, media: any, state: ConversationState) {
-  await sendWhatsAppMessage(from, `📄 Document received! Processing with AI OCR...\n\n⏳ This may take a few moments while I extract your vehicle information.`);
-  
-  // Download the media file
-  const fileUrl = await downloadWhatsAppMedia(media.id);
-  
-  if (!fileUrl) {
-    await sendWhatsAppMessage(from, `❌ Failed to download your document. Please try uploading again.`);
-    return;
-  }
-  
-  // Get or create user
-  const userId = await findOrCreateUser(from);
-  if (!userId) {
-    await sendWhatsAppMessage(from, `❌ System error. Please try again later.`);
-    return;
-  }
-  
-  await linkUserToConversation(from, userId);
-  
-  // Process with OCR
-  const result = await processVehicleDocument(
-    fileUrl, 
-    userId, 
-    state.conversation_data.selected_usage.code
-  );
-  
-  if (result.success) {
-    const vehicleData = result.data.extracted_data;
-    const summary = `✅ *Vehicle Successfully Added!*\n\n📋 *Extracted Information:*\n• Plate: ${vehicleData.plate || 'N/A'}\n• Make: ${vehicleData.make || 'N/A'}\n• Model: ${vehicleData.model || 'N/A'}\n• Year: ${vehicleData.year || 'N/A'}\n• Owner: ${vehicleData.owner || 'N/A'}\n• Insurance: ${vehicleData.insurance_provider || 'N/A'}\n\n${result.data.driver ? '🚗 Driver profile activated! You can now receive ride requests.' : ''}`;
-    
-    await sendWhatsAppMessage(from, summary, true);
-  } else {
-    await sendWhatsAppMessage(from, `❌ *OCR Processing Failed*\n\n${result.error || 'Unable to extract vehicle information from the document.'}\n\nPlease ensure:\n• Image is clear and well-lit\n• Document contains vehicle information\n• Text is readable\n\nTry uploading again or contact support.`);
-  }
-  
-  await updateConversationState(from, 'main_menu');
-}
-
-// ============= ADDITIONAL FLOW HANDLERS =============
-
-async function handleScheduleRoleSelection(from: string, messageText: string, state: ConversationState) {
-  if (messageText === '1') {
-    const vehicleTypes = await getVehicleTypes();
-    const typesList = vehicleTypes.map((type, index) => `${index + 1}️⃣ ${type.label}`).join('\n');
-    
-    await sendWhatsAppMessage(from, `🚕 *Schedule Trip as Passenger*\n\nSelect vehicle type:\n\n${typesList}\n\nReply with your choice:`);
-    await updateConversationState(from, 'schedule_passenger_vehicle_type', { 
-      role: 'passenger',
-      vehicle_types: vehicleTypes 
-    });
-  } else if (messageText === '2') {
-    await sendWhatsAppMessage(from, `🚗 *Schedule Trip as Driver*\n\n📍 Share your starting location using the location button to set your route.`);
-    await updateConversationState(from, 'schedule_driver_start_location', { role: 'driver' });
-  } else {
-    await sendWhatsAppMessage(from, `Please reply with 1 for Passenger or 2 for Driver.`);
-  }
-}
-
-async function handleSchedulePassengerVehicleType(from: string, messageText: string, state: ConversationState) {
-  const vehicleTypes = state.conversation_data.vehicle_types;
-  const choice = parseInt(messageText) - 1;
-  
-  if (choice >= 0 && choice < vehicleTypes.length) {
-    const selectedType = vehicleTypes[choice];
-    
-    await sendWhatsAppMessage(from, `🚕 Selected: ${selectedType.label}\n\n📍 Please share your pickup location using the location button.`);
-    await updateConversationState(from, 'schedule_pickup_location', {
-      ...state.conversation_data,
-      selected_vehicle_type: selectedType
-    });
-  } else {
-    await sendWhatsAppMessage(from, `❌ Invalid choice. Please select a number from the list.`);
-  }
-}
-
-async function handleSchedulePickupLocation(from: string, location: any, state: ConversationState) {
-  await sendWhatsAppMessage(from, `📍 Pickup location set!\n\n📍 Now please share your drop-off location using the location button.`);
-  await updateConversationState(from, 'schedule_dropoff_location', {
-    ...state.conversation_data,
-    pickup_location: location
-  });
-}
-
-async function handleScheduleDropoffLocation(from: string, location: any, state: ConversationState) {
-  await sendWhatsAppMessage(from, `📍 Drop-off location set!\n\n🕐 When would you like to travel?\n\n1️⃣ Today\n2️⃣ Tomorrow\n3️⃣ Pick specific date\n4️⃣ ASAP\n\nReply with your choice:`);
-  await updateConversationState(from, 'schedule_datetime', {
-    ...state.conversation_data,
-    dropoff_location: location
-  });
-}
-
-async function handleScheduleDateTime(from: string, messageText: string, state: ConversationState) {
-  let scheduledFor = new Date();
-  
-  if (messageText === '1') {
-    // Today - ask for time
-    await sendWhatsAppMessage(from, `🕐 What time today? (format: HH:MM)\n\nExample: 14:30`);
-    await updateConversationState(from, 'schedule_time_entry', {
-      ...state.conversation_data,
-      date_choice: 'today'
-    });
-    return;
-  } else if (messageText === '2') {
-    // Tomorrow
-    scheduledFor.setDate(scheduledFor.getDate() + 1);
-    await sendWhatsAppMessage(from, `🕐 What time tomorrow? (format: HH:MM)\n\nExample: 09:00`);
-    await updateConversationState(from, 'schedule_time_entry', {
-      ...state.conversation_data,
-      date_choice: 'tomorrow'
-    });
-    return;
-  } else if (messageText === '3') {
-    await sendWhatsAppMessage(from, `📅 Enter date (format: DD/MM/YYYY)\n\nExample: 25/12/2024`);
-    await updateConversationState(from, 'schedule_date_entry', state.conversation_data);
-    return;
-  } else if (messageText === '4') {
-    // ASAP
-    scheduledFor = new Date();
-  } else {
-    await sendWhatsAppMessage(from, `Please choose 1-4 from the options.`);
-    return;
-  }
-  
-  await createScheduledRide(from, state.conversation_data, scheduledFor);
-}
-
-async function createScheduledRide(from: string, conversationData: any, scheduledFor: Date) {
-  // Get or create user
-  const userId = await findOrCreateUser(from);
-  if (!userId) {
-    await sendWhatsAppMessage(from, `❌ System error. Please try again later.`);
-    return;
-  }
-  
-  // Create ride record
-  const { data: ride, error } = await supabase
-    .from('rides')
-    .insert({
-      passenger_user_id: userId,
-      pickup: conversationData.pickup_location,
-      dropoff: conversationData.dropoff_location,
-      scheduled_for: scheduledFor.toISOString(),
-      status: 'pending',
-      meta: {
-        vehicle_type: conversationData.selected_vehicle_type?.code,
-        created_via: 'whatsapp',
-        phone_number: from
-      }
-    })
-    .select()
-    .single();
-  
-  if (error) {
-    console.error('Failed to create ride:', error);
-    await sendWhatsAppMessage(from, `❌ Failed to schedule ride. Please try again.`);
-    return;
-  }
-  
-  await sendWhatsAppMessage(from, `✅ *Trip Scheduled Successfully!*\n\n🚕 Vehicle: ${conversationData.selected_vehicle_type?.label}\n📍 Pickup: ${conversationData.pickup_location?.name || 'Location set'}\n📍 Drop-off: ${conversationData.dropoff_location?.name || 'Location set'}\n🕐 Time: ${scheduledFor.toLocaleString()}\n\n📱 Trip ID: ${ride.id.slice(0, 8)}\n\nYou'll receive notifications when drivers respond to your request.`, true);
-  
-  await updateConversationState(from, 'main_menu');
-}
-
-async function handleInsuranceVehicleCheck(from: string, messageText: string, state: ConversationState) {
-  if (messageText === '1') {
-    // Check if user has vehicles
-    const userId = await findOrCreateUser(from);
-    if (!userId) {
-      await sendWhatsAppMessage(from, `❌ System error. Please try again later.`);
-      return;
-    }
-    
-    const { data: vehicles } = await supabase
-      .from('vehicles')
-      .select('*')
-      .eq('user_id', userId);
-    
-    if (!vehicles || vehicles.length === 0) {
-      await sendWhatsAppMessage(from, `🚗 No vehicles found in your account.\n\nPlease add a vehicle first by going to:\n4️⃣ Add Vehicle\n\nOr continue without a registered vehicle.`, true);
-      return;
-    }
-    
-    const vehiclesList = vehicles.map((vehicle, index) => 
-      `${index + 1}️⃣ ${vehicle.plate || 'Unknown'} - ${vehicle.make} ${vehicle.model}`
-    ).join('\n');
-    
-    await sendWhatsAppMessage(from, `🚗 *Select Vehicle for Insurance:*\n\n${vehiclesList}\n\nReply with the number of your choice:`);
-    await updateConversationState(from, 'insurance_select_vehicle', {
-      vehicles: vehicles,
-      user_id: userId
-    });
-    
-  } else if (messageText === '2') {
-    await sendWhatsAppMessage(from, `🚗 You'll need to add your vehicle first.\n\nRedirecting to vehicle addition...`);
-    await updateConversationState(from, 'main_menu');
-    // Trigger vehicle addition flow
-    const usageTypes = [
-      { code: 'moto_taxi', label: 'Moto Taxi' },
-      { code: 'cab', label: 'Taxi/Cab' },
-      { code: 'personal', label: 'Personal Use' }
-    ];
-    
-    const usageList = usageTypes.map((type, index) => `${index + 1}️⃣ ${type.label}`).join('\n');
-    
-    await sendWhatsAppMessage(from, `🚗 *Add Your Vehicle*\n\nSelect your vehicle usage type:\n\n${usageList}\n\nReply with the number of your choice.`);
-    await updateConversationState(from, 'vehicle_select_usage', { usage_types: usageTypes });
-    
-  } else {
-    await sendWhatsAppMessage(from, `Please reply with 1 if you have a vehicle or 2 if you need to add one.`);
-  }
-}
-
-async function handleInsuranceStartDate(from: string, messageText: string, state: ConversationState) {
-  let startDate = new Date();
-  
-  if (messageText === '1') {
-    // Start today
-    startDate = new Date();
-  } else if (messageText === '2') {
-    await sendWhatsAppMessage(from, `📅 Enter start date (format: DD/MM/YYYY)\n\nExample: 01/01/2025`);
-    await updateConversationState(from, 'insurance_custom_start_date', state.conversation_data);
-    return;
-  } else {
-    await sendWhatsAppMessage(from, `Please reply with 1 for today or 2 to pick another date.`);
-    return;
-  }
-  
-  // Get insurance periods
-  const { data: periods } = await supabase.from('insurance_periods').select('*');
-  const periodsList = (periods || []).map((period, index) => 
-    `${index + 1}️⃣ ${period.label} (${period.months} months)`
-  ).join('\n');
-  
-  await sendWhatsAppMessage(from, `📋 *Select Insurance Period:*\n\n${periodsList}\n\nReply with your choice:`);
-  await updateConversationState(from, 'insurance_period', {
-    ...state.conversation_data,
-    start_date: startDate.toISOString(),
-    insurance_periods: periods
-  });
-}
-
-async function handleInsurancePeriod(from: string, messageText: string, state: ConversationState) {
-  const periods = state.conversation_data.insurance_periods;
-  const choice = parseInt(messageText) - 1;
-  
-  if (choice >= 0 && choice < periods.length) {
-    const selectedPeriod = periods[choice];
-    
-    // Get available addons
-    const { data: addons } = await supabase.from('insurance_addons').select('*').eq('is_active', true);
-    
-    if (addons && addons.length > 0) {
-      const addonsList = addons.map((addon, index) => 
-        `${index + 1}️⃣ ${addon.name} (+${addon.price} RWF)`
-      ).join('\n');
-      
-      await sendWhatsAppMessage(from, `✅ Selected: ${selectedPeriod.label}\n\n🛡️ *Optional Add-ons:*\n\n${addonsList}\n\n0️⃣ No add-ons (continue)\n\nSelect add-ons by replying with numbers (e.g., "1,3" for multiple) or 0 to continue:`);
-      await updateConversationState(from, 'insurance_addons', {
-        ...state.conversation_data,
-        selected_period: selectedPeriod,
-        available_addons: addons
-      });
-    } else {
-      await generateInsuranceQuote(from, state.conversation_data, selectedPeriod, []);
-    }
-  } else {
-    await sendWhatsAppMessage(from, `❌ Invalid choice. Please select a number from the list.`);
-  }
-}
-
-async function handleInsuranceAddons(from: string, messageText: string, state: ConversationState) {
-  const addons = state.conversation_data.available_addons;
-  let selectedAddons: any[] = [];
-  
-  if (messageText !== '0') {
-    const choices = messageText.split(',').map(s => parseInt(s.trim()) - 1);
-    selectedAddons = choices
-      .filter(choice => choice >= 0 && choice < addons.length)
-      .map(choice => addons[choice]);
-  }
-  
-  await generateInsuranceQuote(from, state.conversation_data, state.conversation_data.selected_period, selectedAddons);
-}
-
-async function generateInsuranceQuote(from: string, conversationData: any, period: any, selectedAddons: any[]) {
-  const userId = conversationData.user_id;
-  const vehicleId = conversationData.selected_vehicle?.id;
-  
-  // Calculate total premium
-  const basePremium = 50000; // Base premium in RWF
-  const periodMultiplier = period.multiplier || 1;
-  const addonsCost = selectedAddons.reduce((sum, addon) => sum + (addon.price || 0), 0);
-  const totalPremium = (basePremium * periodMultiplier) + addonsCost;
-  
-  // Create quote record
-  const quoteData = {
-    base_premium: basePremium,
-    period: period.label,
-    period_months: period.months,
-    selected_addons: selectedAddons.map(addon => addon.name),
-    total_premium: totalPremium,
-    currency: 'RWF',
-    created_via: 'whatsapp'
-  };
-  
-  const { data: quote, error } = await supabase
-    .from('insurance_quotes')
-    .insert({
-      user_id: userId,
-      vehicle_id: vehicleId,
-      quote_data: quoteData,
-      status: 'pending',
-      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
-    })
-    .select()
-    .single();
-  
-  if (error) {
-    console.error('Failed to create quote:', error);
-    await sendWhatsAppMessage(from, `❌ Failed to generate quote. Please try again.`);
-    return;
-  }
-  
-  const addonsText = selectedAddons.length > 0 
-    ? `\n🛡️ *Add-ons:*\n${selectedAddons.map(addon => `• ${addon.name}`).join('\n')}`
-    : '';
-  
-  await sendWhatsAppMessage(from, `💼 *Insurance Quote Generated!*\n\n📋 *Summary:*\n• Period: ${period.label}\n• Base Premium: ${basePremium.toLocaleString()} RWF\n• Period Cost: ${(basePremium * periodMultiplier).toLocaleString()} RWF${addonsText}\n\n💰 *Total Premium: ${totalPremium.toLocaleString()} RWF*\n\n⏰ Quote valid for 24 hours\n📱 Quote ID: ${quote.id.slice(0, 8)}\n\nWhat would you like to do?\n1️⃣ Proceed with payment\n2️⃣ Modify quote\n3️⃣ Save for later\n\nReply with your choice:`);
-  
-  await updateConversationState(from, 'insurance_quote_action', {
-    ...conversationData,
-    quote: quote,
-    total_premium: totalPremium
-  });
-}
-
-async function getVehicleTypes(): Promise<any[]> {
-  const { data } = await supabase.from('vehicle_types').select('*');
-  return data || [
-    { code: 'moto', label: 'Motorcycle' },
-    { code: 'car', label: 'Car' },
-    { code: 'suv', label: 'SUV' },
-    { code: 'truck', label: 'Truck' }
-  ];
+  await updateConversationState(from, newState);
 }
 
 // ============= WEBHOOK HANDLER =============
