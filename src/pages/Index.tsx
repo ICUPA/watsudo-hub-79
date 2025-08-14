@@ -7,10 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { User, Car, Route, ShieldCheck, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 const Index = () => {
   const { profile, isAdmin, refreshProfile } = useAuth();
   const [currentView, setCurrentView] = useState<DashboardView>("overview");
+  const navigate = useNavigate();
 
   const handleRefreshProfile = async () => {
     await refreshProfile();
@@ -56,7 +58,7 @@ const Index = () => {
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <Button variant="outline" className="w-full">
+                      <Button variant="outline" className="w-full" onClick={() => navigate('/profile')}>
                         View Profile
                       </Button>
                     </CardContent>
