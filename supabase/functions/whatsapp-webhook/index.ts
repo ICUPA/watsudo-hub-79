@@ -10,6 +10,14 @@ const WHATSAPP_ACCESS_TOKEN = Deno.env.get('WHATSAPP_ACCESS_TOKEN');
 const WHATSAPP_PHONE_NUMBER_ID = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
 const WHATSAPP_APP_SECRET = Deno.env.get('WHATSAPP_APP_SECRET');
 
+// Debug environment variables
+console.log('Environment check:', {
+  hasVerifyToken: !!VERIFY_TOKEN,
+  hasAccessToken: !!WHATSAPP_ACCESS_TOKEN,
+  hasPhoneId: !!WHATSAPP_PHONE_NUMBER_ID,
+  hasAppSecret: !!WHATSAPP_APP_SECRET
+});
+
 // Initialize Supabase client with service role for full access
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
