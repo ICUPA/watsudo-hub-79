@@ -116,12 +116,16 @@ const Index = () => {
                   </Card>
                 </div>
 
-                {!profile?.wa_phone && (
+                {(!profile?.wa_phone || profile?.wa_phone === '') && (
                   <Card className="glass-card border-warning/20">
                     <CardHeader>
                       <CardTitle className="text-warning">Complete Your Profile</CardTitle>
                       <CardDescription>
                         Please add your phone number to access all features.
+                        <br />
+                        <small className="text-xs opacity-70">
+                          Current phone: {profile?.wa_phone || 'Not set'}
+                        </small>
                       </CardDescription>
                     </CardHeader>
                   </Card>
