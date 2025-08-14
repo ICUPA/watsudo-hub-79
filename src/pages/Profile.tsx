@@ -41,6 +41,7 @@ export default function Profile() {
   });
 
   useEffect(() => {
+    console.log('Profile changed:', profile);
     if (profile) {
       setProfileData({
         wa_name: profile.wa_name || '',
