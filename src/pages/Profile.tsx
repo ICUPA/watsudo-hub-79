@@ -205,21 +205,28 @@ export default function Profile() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-destructive">
               <AlertCircle className="h-5 w-5" />
-              Profile Not Found
+              Authentication Issue
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-muted-foreground">
-              Unable to load your profile. This might be a temporary issue.
+              There's an authentication token mismatch. Please sign out and sign back in to fix this.
             </p>
             <div className="space-y-2">
-              <Button onClick={handleRefreshProfile} className="w-full" disabled={loading}>
-                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                Retry Loading Profile
+              <Button 
+                onClick={() => {
+                  // Force sign out to clear invalid token
+                  localStorage.clear();
+                  sessionStorage.clear();
+                  window.location.href = '/auth';
+                }} 
+                className="w-full"
+              >
+                Sign Out & Fix Issue
               </Button>
-              <Button variant="outline" onClick={() => navigate('/')} className="w-full">
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Dashboard
+              <Button variant="outline" onClick={handleRefreshProfile} className="w-full" disabled={loading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Try Again
               </Button>
             </div>
           </CardContent>
