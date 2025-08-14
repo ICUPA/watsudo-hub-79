@@ -26,7 +26,7 @@ interface Vehicle {
 }
 
 export default function Profile() {
-  const { profile, refreshProfile } = useAuth();
+  const { profile, user, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -54,7 +54,7 @@ export default function Profile() {
   }, [profile]);
 
   const loadVehicles = async () => {
-    const userId = profile?.user_id;
+    const userId = profile?.user_id || user?.id;
     if (!userId) return;
     
     try {
@@ -76,8 +76,12 @@ export default function Profile() {
   };
 
   const handleSaveProfile = async () => {
-    if (!profile?.user_id) {
-      toast.error('User ID not available');
+    // Get user ID from either profile or auth user
+    const userId = profile?.user_id || user?.id;
+    console.log('Profile save attempt:', { userId, profileUserId: profile?.user_id, authUserId: user?.id, profileData });
+    
+    if (!userId) {
+      toast.error('User ID not available - please refresh the page');
       return;
     }
     
@@ -86,7 +90,7 @@ export default function Profile() {
       const { error } = await supabase
         .from('profiles')
         .update(profileData)
-        .eq('user_id', profile.user_id);
+        .eq('user_id', userId);
 
       if (error) {
         toast.error('Failed to update profile');
