@@ -5,20 +5,52 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { QrCode, Download, ExternalLink, Copy } from "lucide-react";
-import { generateQRCode, createQRCodeData, QRCodeData } from "@/lib/qr-generator";
-import { normalizePhone } from "@/lib/supabase-placeholder";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
+interface QRCodeData {
+  type: "phone" | "code";
+  identifier: string;
+  amount?: number;
+  ussd: string;
+  telLink: string;
+  qrCodeUrl: string;
+}
+
 export function QRGenerator() {
+  const { user } = useAuth();
   const [type, setType] = useState<"phone" | "code">("phone");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [amount, setAmount] = useState("");
   const [qrData, setQrData] = useState<QRCodeData | null>(null);
-  const [qrImageUrl, setQrImageUrl] = useState<string>("");
   const [isGenerating, setIsGenerating] = useState(false);
 
+  const normalizePhone = (phone: string): string => {
+    // Remove all non-digits
+    const digits = phone.replace(/\D/g, '');
+    
+    // If starts with 250, convert to local format
+    if (digits.startsWith('250')) {
+      return '0' + digits.slice(3);
+    }
+    
+    // If starts with +250, convert to local format  
+    if (digits.startsWith('+250')) {
+      return '0' + digits.slice(4);
+    }
+    
+    // If already local format or other, return as is
+    return digits.startsWith('0') ? digits : '0' + digits;
+  };
+
   const handleGenerate = async () => {
+    if (!user) {
+      toast.error("You must be logged in to generate QR codes");
+      return;
+    }
+
     const identifier = type === "phone" ? phone : code;
     const amountValue = amount ? parseInt(amount) : undefined;
 
@@ -27,7 +59,7 @@ export function QRGenerator() {
       return;
     }
 
-    if (type === "phone" && !normalizePhone(identifier)) {
+    if (type === "phone" && !/^(\+250|0)?[0-9]{9}$/.test(identifier.replace(/\s/g, ''))) {
       toast.error("Please enter a valid phone number");
       return;
     }
@@ -45,12 +77,24 @@ export function QRGenerator() {
     setIsGenerating(true);
     try {
       const normalizedIdentifier = type === "phone" ? normalizePhone(identifier) : identifier;
-      const data = createQRCodeData(type, normalizedIdentifier, amountValue);
-      const imageUrl = await generateQRCode(data.telLink);
       
-      setQrData(data);
-      setQrImageUrl(imageUrl);
-      toast.success("QR code generated successfully!");
+      const { data, error } = await supabase.functions.invoke('generate-qr', {
+        body: {
+          type,
+          identifier: normalizedIdentifier,
+          amount: amountValue,
+          user_id: user.id
+        }
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        setQrData(data.data);
+        toast.success("QR code generated successfully!");
+      } else {
+        throw new Error(data.error);
+      }
     } catch (error) {
       console.error("QR generation error:", error);
       toast.error("Failed to generate QR code");
@@ -66,9 +110,9 @@ export function QRGenerator() {
   };
 
   const downloadQR = () => {
-    if (qrImageUrl) {
+    if (qrData?.qrCodeUrl) {
       const link = document.createElement('a');
-      link.href = qrImageUrl;
+      link.href = qrData.qrCodeUrl;
       link.download = `qr-${type}-${Date.now()}.png`;
       link.click();
     }
@@ -141,11 +185,11 @@ export function QRGenerator() {
             {isGenerating ? "Generating..." : "Generate QR Code"}
           </Button>
 
-          {qrImageUrl && qrData ? (
+          {qrData ? (
             <div className="space-y-4 p-4 border rounded-lg bg-muted/10">
               <div className="text-center">
                 <img 
-                  src={qrImageUrl} 
+                  src={qrData.qrCodeUrl} 
                   alt="Generated QR Code" 
                   className="mx-auto rounded-lg border shadow-sm max-w-[250px]"
                 />
@@ -198,7 +242,6 @@ export function QRGenerator() {
                   </Button>
                   <Button variant="outline" onClick={() => {
                     setQrData(null);
-                    setQrImageUrl("");
                     setPhone("");
                     setCode("");
                     setAmount("");

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,60 +12,80 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Search, Car, FileCheck, Eye, CheckCircle, XCircle } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
-// Mock data
-const mockVehicles = [
-  {
-    id: "1",
-    user_id: "1",
-    usage_type: "moto",
-    plate: "RAB 123A",
-    vin: "1HGBH41JXMN109186",
-    make: "Honda",
-    model: "CBR 150",
-    model_year: 2022,
-    insurance_provider: "SONARWA",
-    insurance_policy: "POL123456",
-    insurance_expiry: "2024-12-31",
-    doc_url: "/docs/insurance_cert_1.pdf",
-    verified: true,
-    created_at: "2024-01-15T10:30:00Z",
-    owner_name: "Jean Uwimana"
-  },
-  {
-    id: "2",
-    user_id: "2", 
-    usage_type: "cab",
-    plate: "RAC 456B",
-    vin: "2HGFC2F53HH123456",
-    make: "Toyota",
-    model: "Corolla",
-    model_year: 2021,
-    insurance_provider: "RADIANT",
-    insurance_policy: "POL789012",
-    insurance_expiry: "2024-06-30",
-    doc_url: "/docs/insurance_cert_2.pdf",
-    verified: false,
-    created_at: "2024-01-12T09:15:00Z",
-    owner_name: "Marie Mukamana"
-  }
-];
+interface Vehicle {
+  id: string;
+  user_id: string;
+  usage_type: string;
+  plate?: string;
+  vin?: string;
+  make?: string;
+  model?: string;
+  model_year?: number;
+  insurance_provider?: string;
+  insurance_policy?: string;
+  insurance_expiry?: string;
+  doc_url?: string;
+  verified: boolean;
+  created_at: string;
+  profiles?: {
+    wa_name?: string;
+  } | null;
+}
 
 export function VehicleManagement() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [vehicles, setVehicles] = useState(mockVehicles);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadVehicles();
+  }, []);
+
+  const loadVehicles = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("vehicles")
+        .select("*")
+        .order("created_at", { ascending: false });
+      
+      if (error) throw error;
+      setVehicles(data || []);
+    } catch (error) {
+      console.error("Error loading vehicles:", error);
+      toast.error("Failed to load vehicles");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredVehicles = vehicles.filter(vehicle => 
     vehicle.plate?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     vehicle.make?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     vehicle.model?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    vehicle.owner_name?.toLowerCase().includes(searchTerm.toLowerCase())
+    vehicle.profiles?.wa_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleVerify = (vehicleId: string) => {
-    setVehicles(prev => prev.map(vehicle => 
-      vehicle.id === vehicleId ? { ...vehicle, verified: true } : vehicle
-    ));
+  const handleVerify = async (vehicleId: string) => {
+    try {
+      const { error } = await supabase
+        .from("vehicles")
+        .update({ verified: true })
+        .eq("id", vehicleId);
+      
+      if (error) throw error;
+      
+      setVehicles(prev => prev.map(vehicle => 
+        vehicle.id === vehicleId ? { ...vehicle, verified: true } : vehicle
+      ));
+      toast.success("Vehicle verified successfully");
+    } catch (error) {
+      console.error("Error verifying vehicle:", error);
+      toast.error("Failed to verify vehicle");
+    }
   };
 
   const getUsageTypeBadge = (type: string) => {
@@ -146,16 +166,16 @@ export function VehicleManagement() {
                           <div className="h-10 w-10 bg-primary/10 rounded-lg flex items-center justify-center">
                             <Car className="h-5 w-5 text-primary" />
                           </div>
-                          <div>
-                            <p className="font-medium">{vehicle.plate}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {vehicle.make} {vehicle.model} ({vehicle.model_year})
-                            </p>
-                          </div>
+                        <div>
+                          <p className="font-medium">{vehicle.plate || "No plate"}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {vehicle.make} {vehicle.model} ({vehicle.model_year})
+                          </p>
+                        </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <p className="font-medium">{vehicle.owner_name}</p>
+                        <p className="font-medium">Owner #{vehicle.user_id.slice(0, 8)}</p>
                       </TableCell>
                       <TableCell>
                         <Badge variant={usageType.variant}>
@@ -164,9 +184,9 @@ export function VehicleManagement() {
                       </TableCell>
                       <TableCell>
                         <div className="text-sm">
-                          <p className="font-medium">{vehicle.insurance_provider}</p>
+                          <p className="font-medium">{vehicle.insurance_provider || "N/A"}</p>
                           <p className="text-muted-foreground">
-                            Exp: {new Date(vehicle.insurance_expiry).toLocaleDateString()}
+                            Exp: {vehicle.insurance_expiry ? new Date(vehicle.insurance_expiry).toLocaleDateString() : "N/A"}
                           </p>
                         </div>
                       </TableCell>

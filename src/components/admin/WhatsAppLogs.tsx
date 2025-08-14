@@ -7,26 +7,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Search, Filter, MessageSquare, Phone } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
-interface WhatsAppMessage {
+interface WhatsAppLog {
   id: string;
-  user_id: string;
-  direction: 'in' | 'out';
-  payload: any;
+  user_id?: string;
+  phone_number: string;
+  direction: string;
+  message_type: string;
+  message_content?: string;
+  metadata?: any;
+  status: string;
   created_at: string;
-  user?: {
-    wa_id: string;
-    phone_e164?: string;
-    display_name?: string;
-  };
 }
 
 export function WhatsAppLogs() {
-  const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
+  const [messages, setMessages] = useState<WhatsAppLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [directionFilter, setDirectionFilter] = useState<'all' | 'in' | 'out'>('all');
-  const [selectedMessage, setSelectedMessage] = useState<WhatsAppMessage | null>(null);
+  const [directionFilter, setDirectionFilter] = useState<'all' | 'inbound' | 'outbound'>('all');
+  const [selectedMessage, setSelectedMessage] = useState<WhatsAppLog | null>(null);
 
   useEffect(() => {
     loadMessages();
@@ -35,58 +36,17 @@ export function WhatsAppLogs() {
   const loadMessages = async () => {
     try {
       setLoading(true);
-      // Mock data
-      const mockMessages: WhatsAppMessage[] = [
-        {
-          id: '1',
-          user_id: 'user1',
-          direction: 'in',
-          payload: {
-            entry: [{
-              changes: [{
-                value: {
-                  messages: [{
-                    from: '250788123456',
-                    text: { body: 'Hello' },
-                    type: 'text'
-                  }]
-                }
-              }]
-            }]
-          },
-          created_at: '2024-01-15T10:30:00Z',
-          user: {
-            wa_id: '250788123456',
-            phone_e164: '+250788123456',
-            display_name: 'John Doe'
-          }
-        },
-        {
-          id: '2',
-          user_id: 'user1',
-          direction: 'out',
-          payload: {
-            messaging_product: 'whatsapp',
-            to: '250788123456',
-            type: 'interactive',
-            interactive: {
-              type: 'list',
-              header: { type: 'text', text: 'Main Menu' },
-              body: { text: 'Choose a service:' }
-            }
-          },
-          created_at: '2024-01-15T10:30:05Z',
-          user: {
-            wa_id: '250788123456',
-            phone_e164: '+250788123456',
-            display_name: 'John Doe'
-          }
-        }
-      ];
+      const { data, error } = await supabase
+        .from("whatsapp_logs")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(100);
       
-      setMessages(mockMessages);
+      if (error) throw error;
+      setMessages(data || []);
     } catch (error) {
       console.error('Error loading messages:', error);
+      toast.error("Failed to load WhatsApp logs");
     } finally {
       setLoading(false);
     }
@@ -94,31 +54,22 @@ export function WhatsAppLogs() {
 
   const filteredMessages = messages.filter(message => {
     const matchesSearch = !searchQuery || 
-      message.user?.display_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      message.user?.phone_e164?.includes(searchQuery) ||
-      JSON.stringify(message.payload).toLowerCase().includes(searchQuery.toLowerCase());
+      message.phone_number?.includes(searchQuery) ||
+      message.message_content?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      JSON.stringify(message.metadata).toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesDirection = directionFilter === 'all' || message.direction === directionFilter;
     
     return matchesSearch && matchesDirection;
   });
 
-  const getMessagePreview = (message: WhatsAppMessage) => {
-    if (message.direction === 'in') {
-      const text = message.payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body;
-      const interactive = message.payload?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.interactive;
-      
-      if (text) return text;
-      if (interactive) return `Interactive: ${interactive.button_reply?.title || interactive.list_reply?.title || 'Unknown'}`;
-      return 'Media or other message type';
-    } else {
-      const text = message.payload?.text?.body;
-      const interactive = message.payload?.interactive;
-      
-      if (text) return text;
-      if (interactive) return `${interactive.type}: ${interactive.header?.text || interactive.body?.text || 'Interactive message'}`;
-      return 'Outbound message';
+  const getMessagePreview = (message: WhatsAppLog) => {
+    if (message.message_content) {
+      return message.message_content.length > 100 
+        ? message.message_content.slice(0, 100) + "..."
+        : message.message_content;
     }
+    return `${message.message_type} message`;
   };
 
   return (
@@ -146,8 +97,8 @@ export function WhatsAppLogs() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Messages</SelectItem>
-            <SelectItem value="in">Incoming</SelectItem>
-            <SelectItem value="out">Outgoing</SelectItem>
+            <SelectItem value="inbound">Incoming</SelectItem>
+            <SelectItem value="outbound">Outgoing</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -161,23 +112,23 @@ export function WhatsAppLogs() {
               <CardHeader>
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-2">
-                    {message.direction === 'in' ? (
+                    {message.direction === 'inbound' ? (
                       <MessageSquare className="h-4 w-4 text-blue-500" />
                     ) : (
                       <Phone className="h-4 w-4 text-green-500" />
                     )}
                     <div>
                       <h4 className="font-medium">
-                        {message.user?.display_name || 'Unknown User'}
+                        {message.phone_number}
                       </h4>
                       <p className="text-sm text-muted-foreground">
-                        {message.user?.phone_e164}
+                        {message.message_type}
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <Badge variant={message.direction === 'in' ? 'default' : 'secondary'}>
-                      {message.direction === 'in' ? 'Incoming' : 'Outgoing'}
+                    <Badge variant={message.direction === 'inbound' ? 'default' : 'secondary'}>
+                      {message.direction === 'inbound' ? 'Incoming' : 'Outgoing'}
                     </Badge>
                     <p className="text-xs text-muted-foreground mt-1">
                       {new Date(message.created_at).toLocaleString()}
@@ -203,29 +154,37 @@ export function WhatsAppLogs() {
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <h4 className="font-medium">Direction</h4>
-                          <p className="text-sm">{message.direction === 'in' ? 'Incoming' : 'Outgoing'}</p>
+                          <p className="text-sm">{message.direction}</p>
                         </div>
                         <div>
                           <h4 className="font-medium">Timestamp</h4>
                           <p className="text-sm">{new Date(message.created_at).toLocaleString()}</p>
                         </div>
                         <div>
-                          <h4 className="font-medium">User</h4>
-                          <p className="text-sm">{message.user?.display_name || 'Unknown'}</p>
+                          <h4 className="font-medium">Phone</h4>
+                          <p className="text-sm">{message.phone_number}</p>
                         </div>
                         <div>
-                          <h4 className="font-medium">Phone</h4>
-                          <p className="text-sm">{message.user?.phone_e164 || 'Unknown'}</p>
+                          <h4 className="font-medium">Type</h4>
+                          <p className="text-sm">{message.message_type}</p>
                         </div>
                       </div>
                       <div>
-                        <h4 className="font-medium mb-2">Raw Payload</h4>
-                        <ScrollArea className="h-96 w-full border rounded p-4">
-                          <pre className="text-xs">
-                            {JSON.stringify(message.payload, null, 2)}
-                          </pre>
-                        </ScrollArea>
+                        <h4 className="font-medium mb-2">Message Content</h4>
+                        <div className="border rounded p-4 bg-muted/20">
+                          <p className="text-sm">{message.message_content || "No content"}</p>
+                        </div>
                       </div>
+                      {message.metadata && (
+                        <div>
+                          <h4 className="font-medium mb-2">Metadata</h4>
+                          <ScrollArea className="h-96 w-full border rounded p-4">
+                            <pre className="text-xs">
+                              {JSON.stringify(message.metadata, null, 2)}
+                            </pre>
+                          </ScrollArea>
+                        </div>
+                      )}
                     </div>
                   </DialogContent>
                 </Dialog>

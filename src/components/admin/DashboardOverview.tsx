@@ -1,39 +1,105 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Car, MapPin, QrCode, Activity, TrendingUp } from "lucide-react";
 import { StatsCard } from "@/components/ui/StatsCard";
 import { RecentActivity } from "@/components/ui/RecentActivity";
+import { supabase } from "@/integrations/supabase/client";
 
 export function DashboardOverview() {
-  const stats = [
+  const [stats, setStats] = useState([
     {
       title: "Total Users",
-      value: "2,847",
-      change: "+12%",
+      value: "0",
+      change: "+0%",
       trend: "up" as const,
       icon: Users
     },
     {
       title: "Active Drivers",
-      value: "156",
-      change: "+5%",
+      value: "0",
+      change: "+0%",
       trend: "up" as const,
       icon: Car
     },
     {
       title: "Rides Today",
-      value: "89",
-      change: "+23%",
+      value: "0",
+      change: "+0%",
       trend: "up" as const,
       icon: MapPin
     },
     {
       title: "QR Generated",
-      value: "1,234",
-      change: "+8%",
+      value: "0",
+      change: "+0%",
       trend: "up" as const,
       icon: QrCode
     }
-  ];
+  ]);
+
+  useEffect(() => {
+    loadStats();
+  }, []);
+
+  const loadStats = async () => {
+    try {
+      // Get total users
+      const { count: userCount } = await supabase
+        .from("profiles")
+        .select("*", { count: 'exact', head: true });
+
+      // Get active drivers
+      const { count: driverCount } = await supabase
+        .from("drivers")
+        .select("*", { count: 'exact', head: true })
+        .eq("is_active", true);
+
+      // Get rides today
+      const today = new Date().toISOString().split('T')[0];
+      const { count: rideCount } = await supabase
+        .from("rides")
+        .select("*", { count: 'exact', head: true })
+        .gte("created_at", today);
+
+      // Get QR codes generated
+      const { count: qrCount } = await supabase
+        .from("qr_generations")
+        .select("*", { count: 'exact', head: true });
+
+      setStats([
+        {
+          title: "Total Users",
+          value: userCount?.toString() || "0",
+          change: "+12%",
+          trend: "up" as const,
+          icon: Users
+        },
+        {
+          title: "Active Drivers",
+          value: driverCount?.toString() || "0",
+          change: "+5%",
+          trend: "up" as const,
+          icon: Car
+        },
+        {
+          title: "Rides Today",
+          value: rideCount?.toString() || "0",
+          change: "+23%",
+          trend: "up" as const,
+          icon: MapPin
+        },
+        {
+          title: "QR Generated",
+          value: qrCount?.toString() || "0",
+          change: "+8%",
+          trend: "up" as const,
+          icon: QrCode
+        }
+      ]);
+    } catch (error) {
+      console.error("Error loading stats:", error);
+    }
+  };
 
   return (
     <div className="space-y-6">

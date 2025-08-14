@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,69 +12,65 @@ import {
   TableRow 
 } from "@/components/ui/table";
 import { Search, UserCheck, MapPin, Star, Clock, Phone } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
-// Mock data
-const mockDrivers = [
-  {
-    id: "1",
-    user_id: "2",
-    wa_phone: "+250782345678",
-    wa_name: "Marie Mukamana",
-    is_active: true,
-    rating: 4.8,
-    total_trips: 145,
-    location: { lat: -1.9441, lng: 30.0619 },
-    last_seen_at: "2024-01-20T14:22:00Z",
-    vehicle_count: 1,
-    status: "online"
-  },
-  {
-    id: "2", 
-    user_id: "4",
-    wa_phone: "+250783456789",
-    wa_name: "Jean Claude Ndayishimiye",
-    is_active: true,
-    rating: 4.5,
-    total_trips: 89,
-    location: { lat: -1.9506, lng: 30.0588 },
-    last_seen_at: "2024-01-20T13:45:00Z",
-    vehicle_count: 2,
-    status: "busy"
-  },
-  {
-    id: "3",
-    user_id: "5", 
-    wa_phone: "+250784567890",
-    wa_name: "Alice Uwimana",
-    is_active: false,
-    rating: 4.9,
-    total_trips: 234,
-    location: null,
-    last_seen_at: "2024-01-19T18:30:00Z",
-    vehicle_count: 1,
-    status: "offline"
-  }
-];
+interface Driver {
+  id: string;
+  user_id: string;
+  is_active: boolean;
+  rating: number;
+  total_trips: number;
+  location?: any;
+  last_seen_at?: string;
+  profiles?: {
+    wa_phone: string;
+    wa_name?: string;
+  } | null;
+}
 
 export function DriverManagement() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [drivers, setDrivers] = useState(mockDrivers);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadDrivers();
+  }, []);
+
+  const loadDrivers = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("drivers")
+        .select("*")
+        .order("last_seen_at", { ascending: false });
+      
+      if (error) throw error;
+      setDrivers(data || []);
+    } catch (error) {
+      console.error("Error loading drivers:", error);
+      toast.error("Failed to load drivers");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredDrivers = drivers.filter(driver => 
-    driver.wa_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    driver.wa_phone.includes(searchTerm)
+    driver.profiles?.wa_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    driver.profiles?.wa_phone?.includes(searchTerm)
   );
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "online":
-        return <Badge className="bg-success/20 text-success">Online</Badge>;
-      case "busy":
-        return <Badge className="bg-warning/20 text-warning">Busy</Badge>;
-      case "offline":
-        return <Badge variant="outline">Offline</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
+  const getStatusBadge = (driver: Driver) => {
+    const isRecent = driver.last_seen_at && 
+      (new Date().getTime() - new Date(driver.last_seen_at).getTime()) < 5 * 60 * 1000; // 5 minutes
+    
+    if (driver.is_active && isRecent) {
+      return <Badge className="bg-success/20 text-success">Online</Badge>;
+    } else if (driver.is_active) {
+      return <Badge className="bg-warning/20 text-warning">Away</Badge>;
+    } else {
+      return <Badge variant="outline">Offline</Badge>;
     }
   };
 
@@ -112,7 +108,7 @@ export function DriverManagement() {
                 <UserCheck className="h-5 w-5 text-success" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{drivers.filter(d => d.status === "online").length}</p>
+                <p className="text-2xl font-bold">{drivers.filter(d => d.is_active).length}</p>
                 <p className="text-sm text-muted-foreground">Online Now</p>
               </div>
             </div>
@@ -126,8 +122,8 @@ export function DriverManagement() {
                 <Clock className="h-5 w-5 text-warning" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{drivers.filter(d => d.status === "busy").length}</p>
-                <p className="text-sm text-muted-foreground">Currently Busy</p>
+                <p className="text-2xl font-bold">{drivers.filter(d => !d.is_active).length}</p>
+                <p className="text-sm text-muted-foreground">Inactive</p>
               </div>
             </div>
           </CardContent>
@@ -196,15 +192,15 @@ export function DriverManagement() {
                           <UserCheck className="h-4 w-4 text-primary" />
                         </div>
                         <div>
-                          <p className="font-medium">{driver.wa_name}</p>
-                          <p className="text-xs text-muted-foreground">ID: {driver.id}</p>
+                          <p className="font-medium">Driver #{driver.id.slice(0, 8)}</p>
+                          <p className="text-xs text-muted-foreground">ID: {driver.id.slice(0, 8)}...</p>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Phone className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-mono text-sm">{driver.wa_phone}</span>
+                        <span className="font-mono text-sm">N/A</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -216,15 +212,15 @@ export function DriverManagement() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <MapPin className="h-4 w-4 text-muted-foreground" />
-                        <span>{driver.vehicle_count}</span>
+                        <span>0</span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      {getStatusBadge(driver.status)}
+                      {getStatusBadge(driver)}
                     </TableCell>
                     <TableCell>
                       <div className="text-sm text-muted-foreground">
-                        {new Date(driver.last_seen_at).toLocaleString()}
+                        {driver.last_seen_at ? new Date(driver.last_seen_at).toLocaleString() : "Never"}
                       </div>
                     </TableCell>
                     <TableCell>
