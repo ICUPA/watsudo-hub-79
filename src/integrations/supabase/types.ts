@@ -419,6 +419,81 @@ export type Database = {
           },
         ]
       }
+      whatsapp_conversations: {
+        Row: {
+          conversation_data: Json
+          created_at: string
+          current_step: string
+          id: string
+          last_activity_at: string
+          phone_number: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          conversation_data?: Json
+          created_at?: string
+          current_step?: string
+          id?: string
+          last_activity_at?: string
+          phone_number: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          conversation_data?: Json
+          created_at?: string
+          current_step?: string
+          id?: string
+          last_activity_at?: string
+          phone_number?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      whatsapp_files: {
+        Row: {
+          created_at: string
+          file_size: number | null
+          file_type: string
+          file_url: string
+          id: string
+          mime_type: string | null
+          phone_number: string
+          processed: boolean
+          processing_result: Json | null
+          purpose: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          file_size?: number | null
+          file_type: string
+          file_url: string
+          id?: string
+          mime_type?: string | null
+          phone_number: string
+          processed?: boolean
+          processing_result?: Json | null
+          purpose?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          file_size?: number | null
+          file_type?: string
+          file_url?: string
+          id?: string
+          mime_type?: string | null
+          phone_number?: string
+          processed?: boolean
+          processing_result?: Json | null
+          purpose?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       whatsapp_logs: {
         Row: {
           created_at: string
