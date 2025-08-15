@@ -26,10 +26,7 @@ const App = () => (
               path="/" 
               element={
                 <ProtectedRoute>
-                  <div>
-                    <TestWhatsApp />
-                    <Index />
-                  </div>
+                  <Index />
                 </ProtectedRoute>
               } 
             />

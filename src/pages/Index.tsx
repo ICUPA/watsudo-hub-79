@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { User, Car, Route, ShieldCheck, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
+import { TestWhatsApp } from "../test-whatsapp";
 
 const Index = () => {
   const { profile, isAdmin, refreshProfile } = useAuth();
@@ -30,6 +31,7 @@ const Index = () => {
         <main className="flex-1 ml-64">
           <DashboardHeader />
           <div className="p-6">
+              <TestWhatsApp />
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div>
