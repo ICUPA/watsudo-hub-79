@@ -22,6 +22,58 @@ console.log("SUPABASE_SERVICE_ROLE_KEY:", SB_SERVICE ? "SET" : "NOT SET");
 
 const sb = SB_URL && SB_SERVICE ? createClient(SB_URL, SB_SERVICE) : null;
 
+// WhatsApp API helpers
+const ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
+const PHONE_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
+
+async function sendMainMenu(to: string) {
+  if (!ACCESS_TOKEN || !PHONE_ID) {
+    console.error("❌ Missing WhatsApp credentials for sending");
+    return;
+  }
+
+  try {
+    const response = await fetch(`https://graph.facebook.com/v21.0/${PHONE_ID}/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${ACCESS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: to,
+        type: "interactive",
+        interactive: {
+          type: "button",
+          body: { text: "Welcome to MoveRwanda! Choose a service:" },
+          action: {
+            buttons: [
+              { type: "reply", reply: { id: "MOBILITY", title: "🚕 Mobility" }},
+              { type: "reply", reply: { id: "INSURANCE", title: "🛡️ Insurance" }},
+              { type: "reply", reply: { id: "QR", title: "🔳 QR Codes" }}
+            ]
+          }
+        }
+      })
+    });
+
+    const result = await response.json();
+    console.log("📤 Main menu sent:", result);
+
+    if (sb) {
+      await sb.from("whatsapp_logs").insert({
+        direction: "out",
+        phone_number: to,
+        message_type: "interactive",
+        message_content: "Main menu",
+        metadata: result
+      });
+    }
+  } catch (error) {
+    console.error("❌ Failed to send main menu:", error);
+  }
+}
+
 Deno.serve(async (req) => {
   try {
     // Handle CORS preflight requests
@@ -80,10 +132,28 @@ Deno.serve(async (req) => {
       const body = await req.json();
       console.log("📨 Incoming webhook:", JSON.stringify(body, null, 2));
       
+      // Extract message data
+      const entry = body?.entry?.[0];
+      const changes = entry?.changes?.[0]?.value;
+      const message = changes?.messages?.[0];
+      const contact = changes?.contacts?.[0];
+      
+      if (message && contact) {
+        const from = contact.wa_id;
+        const text = message.text?.body;
+        
+        console.log(`📱 Message from ${from}: "${text}"`);
+        
+        // Send main menu for any text message
+        if (text) {
+          await sendMainMenu(from);
+        }
+      }
+      
       if (sb) {
         await sb.from("whatsapp_logs").insert({
           direction: "in",
-          phone_number: "",
+          phone_number: contact?.wa_id || "",
           message_type: "webhook", 
           message_content: JSON.stringify(body),
           metadata: body
