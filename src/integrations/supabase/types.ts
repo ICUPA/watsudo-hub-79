@@ -1281,6 +1281,10 @@ export type Database = {
         Args: { "": unknown }
         Returns: unknown
       }
+      health_check: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
       json: {
         Args: { "": unknown }
         Returns: Json
@@ -1304,6 +1308,17 @@ export type Database = {
           rating: number
           vehicle_type: string
           wa_name: string
+        }[]
+      }
+      nearby_drivers_optimized: {
+        Args: { km?: number; lat: number; limit_count?: number; lng: number }
+        Returns: {
+          distance_km: number
+          driver_id: string
+          rating: number
+          total_trips: number
+          wa_name: string
+          wa_phone: string
         }[]
       }
       path: {
