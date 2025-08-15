@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import * as base64 from "https://deno.land/std@0.223.0/encoding/base64.ts";
-import { encode } from "https://deno.land/x/qrcode@v2.0.0/mod.ts";
+// Remove QR import - use web service instead
 
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -128,15 +128,13 @@ async function ocrVehicleDoc(publicUrl:string){
 async function generateAndSendQR(to:string, userId:string, ctx:any){
   const ussd = buildUSSD(ctx);
   
-  // Generate QR code as PNG bytes
-  const qrPng = await encode(ussd, { 
-    errorCorrectionLevel: "H",
-    margin: 2,
-    width: 300
-  });
+  // Use web service to generate QR code
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(ussd)}`;
+  const qrResponse = await fetch(qrUrl);
+  const qrBytes = new Uint8Array(await qrResponse.arrayBuffer());
   
   const path = `${userId}/${crypto.randomUUID()}.png`;
-  const { error } = await sb.storage.from("qr-codes").upload(path, qrPng, { contentType:"image/png", upsert:true });
+  const { error } = await sb.storage.from("qr-codes").upload(path, qrBytes, { contentType:"image/png", upsert:true });
   if(error) throw error;
   
   await sb.from("qr_generations").insert({ user_id:userId, profile_id: ctx.qr?.profile_id ?? null, amount: ctx.qr?.amount ?? null, ussd, file_path:path });
