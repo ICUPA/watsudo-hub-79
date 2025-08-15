@@ -112,18 +112,28 @@ async function setState(sessionId:string, state:string, context:Record<string,un
   await sb.from("chat_sessions").update({ state, context }).eq("id",sessionId);
 }
 
-// OCR (Insurance certificate)
-async function ocrVehicleDoc(publicUrl:string){
-  const prompt = `Extract JSON from the insurance certificate image/PDF with keys:
-  plate, vin, make, model, model_year, insurance_provider, insurance_policy, insurance_expiry (YYYY-MM-DD or null). Return ONLY JSON.`;
-  const res = await fetch("https://api.openai.com/v1/chat/completions",{
-    method:"POST", headers:{"Authorization":`Bearer ${OPENAI_API_KEY}`,"Content-Type":"application/json"},
-    body: JSON.stringify({ model:"gpt-4o", temperature:0,
-      messages:[{role:"user",content:[{type:"text",text:prompt},{type:"image_url",image_url:{url:publicUrl}}]}] })
-  }).catch(()=>null);
-  const j = await res?.json().catch(()=>null);
-  const t = j?.choices?.[0]?.message?.content || "{}";
-  try { return JSON.parse(t); } catch { return {}; }
+// OCR using existing process-vehicle-ocr edge function  
+async function ocrVehicleDoc(mediaId: string, userId: string, usageType: string){
+  try {
+    const { bytes, mime } = await fetchMedia(mediaId);
+    const path = `docs/${userId}/${crypto.randomUUID()}.${mime.includes("pdf") ? "pdf" : "jpg"}`;
+    
+    // Upload to storage first
+    const { error: uploadError } = await sb.storage.from("vehicle_docs").upload(path, bytes, { contentType: mime, upsert: true });
+    if (uploadError) throw uploadError;
+    
+    // Get public URL and process with existing OCR function
+    const { data: { publicUrl } } = sb.storage.from("vehicle_docs").getPublicUrl(path);
+    const { data, error } = await sb.functions.invoke('process-vehicle-ocr', {
+      body: { file_url: publicUrl, user_id: userId, usage_type: usageType }
+    });
+    
+    if (error || !data.success) throw new Error(data?.error || 'OCR failed');
+    return { path, data: data.data.extracted_data };
+  } catch (error) {
+    console.error('OCR error:', error);
+    return { error: error.message };
+  }
 }
 
 // Generate QR using existing edge function
@@ -412,33 +422,25 @@ Deno.serve(async (req) => {
   // Media (images/pdfs) → AV_DOC or INS_COLLECT_DOCS
   if (m?.image || m?.document) {
     const mediaId = m.image?.id || m.document?.id;
-    if (mediaId) {
-      const { bytes, mime } = await fetchMedia(mediaId);
-      const ext = mime.includes("pdf")? "pdf":"jpg";
-      const path = `docs/${user.id}/${crypto.randomUUID()}.${ext}`;
-      const up = await sb.storage.from("vehicle-docs").upload(path, bytes, { contentType: mime, upsert:true });
-      if (!up.error) {
-        const { data: signed } = await sb.storage.from("vehicle-docs").createSignedUrl(path, 600);
-        if (session.state === "AV_DOC") {
-          const ocr = await ocrVehicleDoc(signed!.signedUrl);
-          const usage = (session.context as any).av?.usage_type;
-          await sb.from("vehicles").insert({
-            user_id:user.id, usage_type:usage, plate:ocr.plate||null, vin:ocr.vin||null,
-            make:ocr.make||null, model:ocr.model||null, model_year:ocr.model_year||null,
-            insurance_provider:ocr.insurance_provider||null, insurance_policy:ocr.insurance_policy||null,
-            insurance_expiry:ocr.insurance_expiry||null, doc_url:path, verified:false, extra:ocr
-          });
-          await setState(session.id,"MOBILITY_MENU",{});
-          await text(to,`Vehicle saved: ${ocr.plate ?? '(no plate parsed)'}\nVerification pending.`);
-          await showMobilityMenu(to);
-          return ok({});
-        }
-        if (session.state === INS_STATES.COLLECT) {
-          // Accept multiple; user replies 'Done' to proceed
-          await text(to,"Received document. Send more or reply 'Done' to continue.");
-          return ok({});
-        }
+    if (mediaId && session.state === "AV_DOC") {
+      const usage = (session.context as any).av?.usage_type;
+      const result = await ocrVehicleDoc(mediaId, user.id, usage);
+      
+      if (result.error) {
+        await text(to, `Document processing failed: ${result.error}\nPlease try again or contact support.`);
+      } else {
+        // Vehicle already saved by the OCR function
+        await setState(session.id, "MOBILITY_MENU", {});
+        await text(to, `Vehicle saved: ${result.data.plate || '(no plate detected)'}\nVerification pending.`);
+        await showMobilityMenu(to);
       }
+      return ok({});
+    }
+    
+    if (mediaId && session.state === INS_STATES.COLLECT) {
+      // For insurance, just acknowledge receipt
+      await text(to, "Document received. Send more or reply 'Done' to continue.");
+      return ok({});
     }
   }
 
@@ -491,32 +493,41 @@ Deno.serve(async (req) => {
       await list(to,"Choose duration", periods.map((p:any)=>({id:`PERIOD_${p.id}`,title:p.label,description:`${p.days} days`})), "Period","Available");
       return ok({});
     }
-    if (session.state === INS_STATES.ADDONS) {
-      const c = session.context as any;
-      if (!c.addons) c.addons = [];
-      // Allow 'Done' to move on
-      if (t.toLowerCase() === "done") {
-        // If PA included (by code), require PA category
-        // (Admin can use addon code 'pa' to signal this. If not present, skip.)
-        const { data: ads=[] } = await fetchAddons();
-        const pa = ads.find((a:any)=> a.code?.toLowerCase() === 'pa');
-        if (pa && c.addons.includes(pa.id)) {
-          await setState(session.id, INS_STATES.PA, c);
-          const { data: cats=[] } = await fetchPA();
-          await list(to,"Personal Accident category", cats.map((p:any)=>({id:`PA_${p.id}`,title:p.label})),"PA","Categories");
-          return ok({});
-        } else {
-          await setState(session.id, INS_STATES.SUMMARY, c);
-          await btns(to,"Summary → Continue?",[
-            {id:"SUM_CONTINUE", title:"Continue"},
-            {id:"CANCEL", title:"Cancel"}]);
-          return ok({});
-        }
-      }
-      // If the user tapped list rows, we handle in interactive branch; here just guide
-      await text(to,"Pick add-ons from the list or send 'Done'.");
-      return ok({});
-    }
+          if (session.state === INS_STATES.ADDONS) {
+            const c = session.context as any;
+            if (!c.addons) c.addons = [];
+            
+            if (t.toLowerCase() === "done") {
+              // Check if PA addon selected (requires PA category)
+              const { data: ads=[] } = await fetchAddons();
+              const pa = ads.find((a:any)=> a.code?.toLowerCase() === 'pa');
+              if (pa && c.addons.includes(pa.id)) {
+                await setState(session.id, INS_STATES.PA, c);
+                const { data: cats=[] } = await fetchPA();
+                await list(to,"Personal Accident category", cats.map((p:any)=>({id:`PA_${p.id}`,title:p.label})),"PA","Categories");
+                return ok({});
+              } else {
+                // Create insurance quote using existing system
+                const { data: ins } = await sb.from("insurance_quotes").insert({
+                  user_id: user.id,
+                  vehicle_id: c.vehicle_id ?? null,
+                  quote_data: {
+                    start_date: c.start_date,
+                    period_id: c.period_id,
+                    addons: c.addons ?? [],
+                    pa_category_id: c.pa_category_id ?? null
+                  },
+                  status: "pending_backoffice"
+                }).select("id").single();
+                
+                await setState(session.id, INS_STATES.QUEUED, { quote_id: ins!.id });
+                await text(to,"Insurance quote submitted for processing. Our team will prepare your quotation shortly.");
+                return ok({});
+              }
+            }
+            await text(to,"Pick add-ons from the list or send 'Done'.");
+            return ok({});
+          }
     if (session.state === INS_STATES.PA && t) {
       await text(to,"Please choose PA category from the list.");
       return ok({});
