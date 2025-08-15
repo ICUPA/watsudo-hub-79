@@ -731,8 +731,10 @@ export type Database = {
           direction: string
           id: string
           message_content: string | null
+          message_id: string | null
           message_type: string
           metadata: Json | null
+          payload: Json | null
           phone_number: string
           status: string
           user_id: string | null
@@ -742,8 +744,10 @@ export type Database = {
           direction: string
           id?: string
           message_content?: string | null
+          message_id?: string | null
           message_type: string
           metadata?: Json | null
+          payload?: Json | null
           phone_number: string
           status?: string
           user_id?: string | null
@@ -753,8 +757,10 @@ export type Database = {
           direction?: string
           id?: string
           message_content?: string | null
+          message_id?: string | null
           message_type?: string
           metadata?: Json | null
+          payload?: Json | null
           phone_number?: string
           status?: string
           user_id?: string | null
