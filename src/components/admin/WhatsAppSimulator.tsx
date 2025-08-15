@@ -5,7 +5,22 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageSquare, Send, Upload, Phone, Bot, User, Image, FileText } from "lucide-react";
-import { sendWhatsAppMessage } from "@/lib/supabase-api";
+import { 
+  sendWhatsAppMessage,
+  getVehicleTypes,
+  generatePaymentQR,
+  getNearbyDrivers,
+  createRide,
+  processInsuranceDocument,
+  saveVehicleData,
+  getUserProfiles,
+  updateUserProfile,
+  getUserMoMo,
+  saveUserMoMo,
+  decodeQR,
+  notifyDriver,
+  driverResponse
+} from "@/lib/supabase-api";
 import { toast } from "sonner";
 
 interface Message {
@@ -326,7 +341,7 @@ export function WhatsAppSimulator() {
           newState.step = 'nd_driver_list';
           
           setTimeout(async () => {
-            const drivers = await getNearbyDrivers(content, newState.selectedVehicleType!);
+            const drivers = await getNearbyDrivers(content);
             newState.nearbyDrivers = drivers;
             const driversList = drivers.map((d, i) => 
               `${i + 1}️⃣ ${d.plate} • ${d.distance}km • ⭐${d.rating}`
@@ -356,10 +371,9 @@ export function WhatsAppSimulator() {
             
             setTimeout(async () => {
               const ride = await createRide({
-                passenger_phone: phoneNumber,
-                driver_id: newState.selectedDriver.id,
-                pickup_location: newState.userLocation,
-                vehicle_type: newState.selectedVehicleType,
+                passenger_user_id: 'mock-user-id',
+                pickup: { location: newState.userLocation },
+                meta: { vehicle_type: newState.selectedVehicleType },
                 status: 'pending'
               });
               
@@ -370,7 +384,7 @@ export function WhatsAppSimulator() {
               // Simulate driver response
               setTimeout(async () => {
                 const accepted = Math.random() > 0.3; // 70% acceptance rate
-                await driverResponse(ride.ride_id!, accepted ? 'confirm' : 'reject');
+                await driverResponse(ride.ride_id!, accepted ? 'accept' : 'reject');
                 
                 if (accepted) {
                   const confirmMsg = `✅ **Ride Confirmed!**\n\n👤 Driver: ${newState.selectedDriver.name}\n🚗 ${newState.selectedDriver.plate}\n📱 ${newState.selectedDriver.phone}\n\n🚗 Status: En-route\n⏱️ ETA: ${newState.selectedDriver.eta}\n\n**Live Updates:**\n📍 Driver approaching\n📞 Driver will call`;
@@ -549,7 +563,7 @@ export function WhatsAppSimulator() {
               
               const vehicleData = {
                 plate: mockExtractedData.plate,
-                owner_phone: phoneNumber,
+                user_id: 'mock-user-id',
                 usage_type: newState.usageType as any
               };
               

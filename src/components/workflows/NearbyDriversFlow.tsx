@@ -52,7 +52,7 @@ export function NearbyDriversFlow() {
     setState({ ...state, location, step: 'driver_list' });
     
     try {
-      const drivers = await getNearbyDrivers(location, state.vehicleType!);
+      const drivers = await getNearbyDrivers(location);
       setState({ ...state, location, drivers, step: 'driver_list' });
       toast.success(`Found ${drivers.length} nearby drivers`);
     } catch (error) {
@@ -72,15 +72,14 @@ export function NearbyDriversFlow() {
     setIsLoading(true);
     try {
       const rideData = {
-        passenger_phone: '+250788767816', // Mock passenger
-        pickup_location: state.location,
-        vehicle_type: state.vehicleType!,
+        passenger_user_id: 'mock-user-id', // Mock passenger ID
+        pickup: { location: state.location },
+        meta: { vehicle_type: state.vehicleType },
         status: 'pending' as const
       };
       
       const result = await createRide(rideData);
       if (result.success) {
-        await notifyDriver(state.selectedDriver.id, result.ride_id!);
         setState({ ...state, rideId: result.ride_id, step: 'confirmed' });
         toast.success('Ride request sent to driver');
       }

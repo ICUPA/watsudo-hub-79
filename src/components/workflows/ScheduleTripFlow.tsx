@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, MapPin, Clock, User, Car, Users } from "lucide-react";
-import { createRide, getVehicleTypes } from "@/lib/supabase-api";
+import { createRide, getVehicleTypes, getNearbyDrivers } from "@/lib/supabase-api";
 import { toast } from "sonner";
 
 interface WorkflowState {
@@ -58,7 +58,7 @@ export function ScheduleTripFlow() {
     setIsLoading(true);
     
     try {
-      const drivers = await getNearbyDrivers(state.pickupLocation!, state.vehicleType!);
+      const drivers = await getNearbyDrivers(state.pickupLocation!);
       setState(prev => ({ ...prev, drivers: drivers.slice(0, 5) }));
       toast.success(`Found ${drivers.length} available drivers`);
     } catch (error) {
@@ -72,11 +72,11 @@ export function ScheduleTripFlow() {
     setIsLoading(true);
     try {
       const rideData = {
-        passenger_phone: '+250788767816',
-        pickup_location: state.pickupLocation!,
-        dropoff_location: state.dropoffLocation!,
-        vehicle_type: state.vehicleType!,
-        scheduled_time: state.scheduledTime!,
+        passenger_user_id: 'mock-user-id', // Mock passenger ID
+        pickup: { location: state.pickupLocation },
+        dropoff: { location: state.dropoffLocation },
+        scheduled_for: state.scheduledTime,
+        meta: { vehicle_type: state.vehicleType },
         status: 'pending' as const
       };
       
