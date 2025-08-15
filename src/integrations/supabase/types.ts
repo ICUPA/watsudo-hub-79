@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      chat_sessions: {
+        Row: {
+          context: Json
+          created_at: string
+          id: string
+          state: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          context?: Json
+          created_at?: string
+          id?: string
+          state?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          context?: Json
+          created_at?: string
+          id?: string
+          state?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       drivers: {
         Row: {
           created_at: string
@@ -538,6 +565,17 @@ export type Database = {
       get_current_user_role: {
         Args: Record<PropertyKey, never>
         Returns: Database["public"]["Enums"]["user_role"]
+      }
+      nearby_drivers: {
+        Args: { km?: number; lat: number; lng: number }
+        Returns: {
+          distance_km: number
+          driver_id: string
+          is_online: boolean
+          rating: number
+          vehicle_type: string
+          wa_name: string
+        }[]
       }
     }
     Enums: {
