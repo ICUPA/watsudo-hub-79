@@ -8,8 +8,8 @@ const corsHeaders = {
 
 // Environment variables
 const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN");
-const SB_URL = Deno.env.get("SUPABASE_URL")!;
-const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SB_URL = Deno.env.get("SUPABASE_URL");
+const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
 // Debug logging at startup
 console.log("🔧 WhatsApp Function Environment Status:");
@@ -17,7 +17,11 @@ console.log("WHATSAPP_VERIFY_TOKEN:", VERIFY_TOKEN ? `SET (${VERIFY_TOKEN.length
 console.log("SUPABASE_URL:", SB_URL ? "SET" : "NOT SET");
 console.log("SUPABASE_SERVICE_ROLE_KEY:", SB_SERVICE ? "SET" : "NOT SET");
 
-const sb = createClient(SB_URL, SB_SERVICE);
+if (!SB_URL || !SB_SERVICE) {
+  console.error("❌ Missing Supabase credentials");
+}
+
+const sb = SB_URL && SB_SERVICE ? createClient(SB_URL, SB_SERVICE) : null;
 
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
