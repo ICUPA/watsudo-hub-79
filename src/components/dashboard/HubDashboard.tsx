@@ -18,6 +18,8 @@ import { QRCodeGenerator } from "@/components/admin/QRCodeGenerator";
 import { WhatsAppWebhookLogs } from "@/components/admin/WhatsAppWebhookLogs";
 import { InsuranceBackoffice } from "@/components/admin/InsuranceBackoffice";
 import { ScanQRFlow } from "@/components/admin/ScanQRFlow";
+import { QRManagement } from "@/components/admin/QRManagement";
+import { CRUDTester } from "@/components/admin/CRUDTester";
 import { NearbyDriversFlow } from "@/components/workflows/NearbyDriversFlow";
 import { ScheduleTripFlow } from "@/components/workflows/ScheduleTripFlow";
 import { AddVehicleFlow } from "@/components/workflows/AddVehicleFlow";
@@ -30,6 +32,7 @@ export type DashboardView =
   | "drivers" 
   | "rides" 
   | "qr" 
+  | "qr-management"
   | "whatsapp"
   | "vehicle-ocr"
   | "insurance-quotes"
@@ -45,6 +48,7 @@ export type DashboardView =
   | "schedule-trip-flow"
   | "add-vehicle-flow"
   | "insurance-moto-flow"
+  | "crud-tester"
   | "settings";
 
 export function HubDashboard() {
@@ -64,6 +68,8 @@ export function HubDashboard() {
         return <RideMonitoring />;
       case "qr":
         return <QRGenerator />;
+      case "qr-management":
+        return <QRManagement />;
       case "whatsapp":
         return <WhatsAppSimulator />;
       case "vehicle-ocr":
@@ -94,6 +100,8 @@ export function HubDashboard() {
         return <AddVehicleFlow />;
       case "insurance-moto-flow":
         return <InsuranceMotoFlow />;
+      case "crud-tester":
+        return <CRUDTester />;
       default:
         return <DashboardOverview />;
     }

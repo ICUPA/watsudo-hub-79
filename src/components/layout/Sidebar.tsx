@@ -60,6 +60,12 @@ const navItems = [
     description: "USSD QR codes"
   },
   {
+    id: "qr-management" as DashboardView,
+    label: "QR Management",
+    icon: QrCode,
+    description: "Manage QR history"
+  },
+  {
     id: "scan-qr" as DashboardView,
     label: "Scan QR",
     icon: Scan,
@@ -142,6 +148,12 @@ const navItems = [
     label: "Insurance Moto",
     icon: Shield,
     description: "Moto insurance flow"
+  },
+  {
+    id: "crud-tester" as DashboardView,
+    label: "CRUD Tester",
+    icon: Settings,
+    description: "Test database operations"
   }
 ];
 

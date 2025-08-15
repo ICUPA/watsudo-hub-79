@@ -3,7 +3,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Users, Car, MapPin, QrCode, Activity, TrendingUp } from "lucide-react";
 import { StatsCard } from "@/components/ui/StatsCard";
 import { RecentActivity } from "@/components/ui/RecentActivity";
+import { SystemHealth } from "@/components/admin/SystemHealth";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 export function DashboardOverview() {
   const [stats, setStats] = useState([
@@ -11,28 +13,28 @@ export function DashboardOverview() {
       title: "Total Users",
       value: "0",
       change: "+0%",
-      trend: "up" as const,
+      trend: "up" as "up" | "down",
       icon: Users
     },
     {
       title: "Active Drivers",
       value: "0",
       change: "+0%",
-      trend: "up" as const,
+      trend: "up" as "up" | "down",
       icon: Car
     },
     {
       title: "Rides Today",
       value: "0",
       change: "+0%",
-      trend: "up" as const,
+      trend: "up" as "up" | "down",
       icon: MapPin
     },
     {
       title: "QR Generated",
       value: "0",
       change: "+0%",
-      trend: "up" as const,
+      trend: "up" as "up" | "down",
       icon: QrCode
     }
   ]);
@@ -43,61 +45,69 @@ export function DashboardOverview() {
 
   const loadStats = async () => {
     try {
-      // Get total users
-      const { count: userCount } = await supabase
-        .from("profiles")
-        .select("*", { count: 'exact', head: true });
+      // Get real-time stats with parallel queries
+      const [
+        { count: userCount },
+        { count: driverCount },
+        { count: todayRides },
+        { count: qrCount },
+        { count: vehicleCount },
+        { count: pendingQuotes },
+        { count: todayQR },
+        { count: yesterdayRides }
+      ] = await Promise.all([
+        supabase.from("profiles").select("*", { count: 'exact', head: true }),
+        supabase.from("drivers").select("*", { count: 'exact', head: true }).eq("is_active", true),
+        supabase.from("rides").select("*", { count: 'exact', head: true })
+          .gte("created_at", new Date().toISOString().split('T')[0]),
+        supabase.from("qr_generations").select("*", { count: 'exact', head: true }),
+        supabase.from("vehicles").select("*", { count: 'exact', head: true }),
+        supabase.from("insurance_quotes").select("*", { count: 'exact', head: true })
+          .eq("status", "draft"),
+        supabase.from("qr_generations").select("*", { count: 'exact', head: true })
+          .gte("created_at", new Date().toISOString().split('T')[0]),
+        supabase.from("rides").select("*", { count: 'exact', head: true })
+          .gte("created_at", new Date(Date.now() - 24*60*60*1000).toISOString().split('T')[0])
+          .lt("created_at", new Date().toISOString().split('T')[0])
+      ]);
 
-      // Get active drivers
-      const { count: driverCount } = await supabase
-        .from("drivers")
-        .select("*", { count: 'exact', head: true })
-        .eq("is_active", true);
-
-      // Get rides today
-      const today = new Date().toISOString().split('T')[0];
-      const { count: rideCount } = await supabase
-        .from("rides")
-        .select("*", { count: 'exact', head: true })
-        .gte("created_at", today);
-
-      // Get QR codes generated
-      const { count: qrCount } = await supabase
-        .from("qr_generations")
-        .select("*", { count: 'exact', head: true });
-
+      // Calculate trends
+      const ridesTrend = yesterdayRides > 0 ? 
+        Math.round(((todayRides || 0) - yesterdayRides) / yesterdayRides * 100) : 0;
+      
       setStats([
         {
           title: "Total Users",
           value: userCount?.toString() || "0",
           change: "+12%",
-          trend: "up" as const,
+          trend: "up" as "up" | "down",
           icon: Users
         },
         {
           title: "Active Drivers",
           value: driverCount?.toString() || "0",
-          change: "+5%",
-          trend: "up" as const,
+          change: "+5%", 
+          trend: "up" as "up" | "down",
           icon: Car
         },
         {
           title: "Rides Today",
-          value: rideCount?.toString() || "0",
-          change: "+23%",
-          trend: "up" as const,
+          value: todayRides?.toString() || "0",
+          change: `${ridesTrend >= 0 ? '+' : ''}${ridesTrend}%`,
+          trend: (ridesTrend >= 0 ? "up" : "down") as "up" | "down",
           icon: MapPin
         },
         {
           title: "QR Generated",
           value: qrCount?.toString() || "0",
-          change: "+8%",
-          trend: "up" as const,
+          change: `Today: ${todayQR || 0}`,
+          trend: "up" as "up" | "down",
           icon: QrCode
         }
       ]);
     } catch (error) {
       console.error("Error loading stats:", error);
+      toast.error("Failed to load dashboard statistics");
     }
   };
 
@@ -119,49 +129,7 @@ export function DashboardOverview() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5" />
-              System Health
-            </CardTitle>
-            <CardDescription>
-              Real-time system monitoring
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm">WhatsApp API</span>
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 bg-success rounded-full animate-pulse"></div>
-                  <span className="text-success text-sm">Online</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm">Database</span>
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 bg-success rounded-full animate-pulse"></div>
-                  <span className="text-success text-sm">Healthy</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm">Storage</span>
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 bg-success rounded-full animate-pulse"></div>
-                  <span className="text-success text-sm">Available</span>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm">OCR Service</span>
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 bg-success rounded-full animate-pulse"></div>
-                  <span className="text-success text-sm">Ready</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <SystemHealth />
 
         <RecentActivity />
       </div>
