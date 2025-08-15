@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 interface PaymentPlan {
   id: string;
@@ -30,39 +31,22 @@ export function PaymentPlans() {
   const loadPlans = async () => {
     try {
       setLoading(true);
-      // Mock data
-      const mockPlans: PaymentPlan[] = [
-        { 
-          id: '1', 
-          label: 'Option 1 - 3 Payments', 
-          description: '1 Month (25%), 2 Months (25%), 9 Months (50%)', 
-          is_active: true, 
-          created_at: '2024-01-01T00:00:00Z' 
-        },
-        { 
-          id: '2', 
-          label: 'Option 2 - 2 Payments', 
-          description: '3 Months (50%), 9 Months (50%)', 
-          is_active: true, 
-          created_at: '2024-01-01T00:00:00Z' 
-        },
-        { 
-          id: '3', 
-          label: 'Option 3 - 2 Payments', 
-          description: '6 Months (75%), 6 Months (25%)', 
-          is_active: true, 
-          created_at: '2024-01-01T00:00:00Z' 
-        },
-        { 
-          id: '4', 
-          label: 'Option 4 - 3 Payments', 
-          description: '1 Month (25%), 3 Months (35%), 8 Months (40%)', 
-          is_active: true, 
-          created_at: '2024-01-01T00:00:00Z' 
-        },
-      ];
+      const { data, error } = await supabase
+        .from("payment_plans")
+        .select("*")
+        .order("id");
       
-      setPlans(mockPlans);
+      if (error) throw error;
+      
+      const formattedPlans: PaymentPlan[] = (data || []).map(plan => ({
+        id: plan.id.toString(),
+        label: plan.name,
+        description: plan.description,
+        is_active: true,
+        created_at: new Date().toISOString()
+      }));
+      
+      setPlans(formattedPlans);
     } catch (error) {
       console.error('Error loading payment plans:', error);
       toast.error('Failed to load payment plans');

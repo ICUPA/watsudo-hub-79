@@ -43,11 +43,14 @@ export function DriverManagement() {
     try {
       const { data, error } = await supabase
         .from("drivers")
-        .select("*")
+        .select(`
+          *,
+          profiles(wa_phone, wa_name)
+        `)
         .order("last_seen_at", { ascending: false });
       
       if (error) throw error;
-      setDrivers(data || []);
+      setDrivers((data as any[]) || []);
     } catch (error) {
       console.error("Error loading drivers:", error);
       toast.error("Failed to load drivers");
@@ -192,7 +195,7 @@ export function DriverManagement() {
                           <UserCheck className="h-4 w-4 text-primary" />
                         </div>
                         <div>
-                          <p className="font-medium">Driver #{driver.id.slice(0, 8)}</p>
+                          <p className="font-medium">{driver.profiles?.wa_name || `Driver #${driver.id.slice(0, 8)}`}</p>
                           <p className="text-xs text-muted-foreground">ID: {driver.id.slice(0, 8)}...</p>
                         </div>
                       </div>
@@ -200,7 +203,7 @@ export function DriverManagement() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Phone className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-mono text-sm">N/A</span>
+                        <span className="font-mono text-sm">{driver.profiles?.wa_phone || "N/A"}</span>
                       </div>
                     </TableCell>
                     <TableCell>

@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Car, Upload, FileText, CheckCircle, AlertCircle } from "lucide-react";
-import { processInsuranceDocument, saveVehicleData } from "@/lib/backend-placeholders";
+import { processInsuranceDocument, saveVehicleData } from "@/lib/supabase-api";
 import { toast } from "sonner";
 
 interface VehicleData {
@@ -80,10 +80,10 @@ export function AddVehicleFlow() {
 
     try {
       const vehicleData = {
-        plate: state.extractedData.plate || 'UNKNOWN',
+        plate: state.extractedData?.plate || 'UNKNOWN',
         ...state.extractedData,
-        usage_type: state.usageType as any,
-        owner_phone: '+250788767816' // Mock phone
+        usage_type: state.usageType!,
+        user_id: 'mock-user-id' // Replace with actual user ID
       };
 
       const result = await saveVehicleData(vehicleData);

@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 interface InsurancePeriod {
   id: string;
@@ -29,22 +30,22 @@ export function InsurancePeriods() {
   const loadPeriods = async () => {
     try {
       setLoading(true);
-      // Placeholder for Supabase query
-      // const { data } = await supabase
-      //   .from('insurance_periods')
-      //   .select('*')
-      //   .order('days', { ascending: true });
+      const { data, error } = await supabase
+        .from('insurance_periods')
+        .select('*')
+        .order('days', { ascending: true });
       
-      // Mock data
-      const mockPeriods: InsurancePeriod[] = [
-        { id: '1', label: '1 Week', days: 7, is_active: true, created_at: '2024-01-01T00:00:00Z' },
-        { id: '2', label: '1 Month', days: 30, is_active: true, created_at: '2024-01-01T00:00:00Z' },
-        { id: '3', label: '3 Months', days: 90, is_active: true, created_at: '2024-01-01T00:00:00Z' },
-        { id: '4', label: '6 Months', days: 180, is_active: true, created_at: '2024-01-01T00:00:00Z' },
-        { id: '5', label: '1 Year', days: 365, is_active: true, created_at: '2024-01-01T00:00:00Z' },
-      ];
+      if (error) throw error;
       
-      setPeriods(mockPeriods);
+      const formattedPeriods: InsurancePeriod[] = (data || []).map(period => ({
+        id: period.id.toString(),
+        label: period.label,
+        days: period.days,
+        is_active: true,
+        created_at: new Date().toISOString()
+      }));
+      
+      setPeriods(formattedPeriods);
     } catch (error) {
       console.error('Error loading periods:', error);
       toast.error('Failed to load insurance periods');

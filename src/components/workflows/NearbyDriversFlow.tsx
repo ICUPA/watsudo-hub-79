@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, Star, Clock, Phone, MessageSquare, Car } from "lucide-react";
-import { getNearbyDrivers, createRide, notifyDriver, getVehicleTypes } from "@/lib/backend-placeholders";
+import { getNearbyDrivers, createRide, getVehicleTypes } from "@/lib/supabase-api";
 import { toast } from "sonner";
 
 interface Driver {

@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 interface PACategory {
   id: string;
@@ -28,16 +29,21 @@ export function InsurancePA() {
   const loadCategories = async () => {
     try {
       setLoading(true);
-      // Mock data
-      const mockCategories: PACategory[] = [
-        { id: '1', label: 'Category I - Death: 1M, Disability: 1M, Medical: 100k', is_active: true, created_at: '2024-01-01T00:00:00Z' },
-        { id: '2', label: 'Category II - Death: 2M, Disability: 2M, Medical: 200k', is_active: true, created_at: '2024-01-01T00:00:00Z' },
-        { id: '3', label: 'Category III - Death: 3M, Disability: 3M, Medical: 300k', is_active: true, created_at: '2024-01-01T00:00:00Z' },
-        { id: '4', label: 'Category IV - Death: 4M, Disability: 4M, Medical: 400k', is_active: true, created_at: '2024-01-01T00:00:00Z' },
-        { id: '5', label: 'Category V - Death: 5M, Disability: 5M, Medical: 500k', is_active: true, created_at: '2024-01-01T00:00:00Z' },
-      ];
+      const { data, error } = await supabase
+        .from("pa_categories")
+        .select("*")
+        .order("label");
       
-      setCategories(mockCategories);
+      if (error) throw error;
+      
+      const formattedCategories: PACategory[] = (data || []).map(category => ({
+        id: category.id,
+        label: category.label,
+        is_active: category.is_active,
+        created_at: new Date().toISOString()
+      }));
+      
+      setCategories(formattedCategories);
     } catch (error) {
       console.error('Error loading PA categories:', error);
       toast.error('Failed to load PA categories');

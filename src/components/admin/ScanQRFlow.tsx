@@ -4,8 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Scan, Upload, ExternalLink, Copy, CheckCircle, XCircle, AlertCircle } from "lucide-react";
-import { decodeQR } from "@/lib/backend-placeholders";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+
+// Mock decode function for demonstration
+const mockDecodeQR = async (base64: string): Promise<{success: boolean; ussd?: string}> => {
+  const mockUSSD = "*182*1*1*0788123456*5000#";
+  return { success: true, ussd: mockUSSD };
+};
 
 interface DecodedQR {
   success: boolean;
@@ -45,7 +51,8 @@ export function ScanQRFlow() {
       // Mock decode with realistic processing time
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      const result = await decodeQR(base64);
+      // Mock QR decode function
+      const result = await mockDecodeQR(base64);
       
       if (result.success && result.ussd) {
         // Parse the USSD code to extract details

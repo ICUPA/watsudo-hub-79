@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Plus, Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 interface InsuranceAddon {
   id: string;
@@ -30,15 +31,23 @@ export function InsuranceAddons() {
   const loadAddons = async () => {
     try {
       setLoading(true);
-      // Mock data
-      const mockAddons: InsuranceAddon[] = [
-        { id: '1', code: 'third_party', label: 'Third Party', is_multi: true, is_active: true, created_at: '2024-01-01T00:00:00Z' },
-        { id: '2', code: 'comesa', label: 'COMESA', is_multi: true, is_active: true, created_at: '2024-01-01T00:00:00Z' },
-        { id: '3', code: 'pa', label: 'Personal Accident', is_multi: false, is_active: true, created_at: '2024-01-01T00:00:00Z' },
-        { id: '4', code: 'comprehensive', label: 'Comprehensive', is_multi: false, is_active: true, created_at: '2024-01-01T00:00:00Z' },
-      ];
+      const { data, error } = await supabase
+        .from("addons")
+        .select("*")
+        .order("label");
       
-      setAddons(mockAddons);
+      if (error) throw error;
+      
+      const formattedAddons: InsuranceAddon[] = (data || []).map(addon => ({
+        id: addon.id,
+        code: addon.code,
+        label: addon.label,
+        is_multi: addon.is_multi,
+        is_active: addon.is_active,
+        created_at: new Date().toISOString()
+      }));
+      
+      setAddons(formattedAddons);
     } catch (error) {
       console.error('Error loading addons:', error);
       toast.error('Failed to load insurance add-ons');

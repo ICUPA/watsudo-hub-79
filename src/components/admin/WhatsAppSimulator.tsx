@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageSquare, Send, Upload, Phone, Bot, User, Image, FileText } from "lucide-react";
-import { processWhatsAppMessage, sendWhatsAppMessage, processInsuranceDocument, saveVehicleData, getUserMoMo, saveUserMoMo, generatePaymentQR, decodeQR, getNearbyDrivers, createRide, getVehicleTypes, notifyDriver, driverResponse } from "@/lib/backend-placeholders";
+import { sendWhatsAppMessage } from "@/lib/supabase-api";
 import { toast } from "sonner";
 
 interface Message {
