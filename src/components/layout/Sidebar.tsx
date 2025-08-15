@@ -72,6 +72,18 @@ const navItems = [
     description: "Message simulator"
   },
   {
+    id: "whatsapp-logs" as DashboardView,
+    label: "WhatsApp Logs",
+    icon: MessageSquare,
+    description: "Webhook logs"
+  },
+  {
+    id: "vehicle-ocr" as DashboardView,
+    label: "Vehicle OCR",
+    icon: FileText,
+    description: "Document processing"
+  },
+  {
     id: "insurance-periods" as DashboardView,
     label: "Insurance Periods",
     icon: Calendar,

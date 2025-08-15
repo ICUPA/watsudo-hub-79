@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Upload, FileText, Eye, CheckCircle, XCircle, Camera, Car } from "lucide-react";
-import { processInsuranceDocument, saveVehicleData, VehicleData } from "@/lib/backend-placeholders";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
 interface OCRResult {
@@ -21,6 +22,7 @@ interface OCRResult {
 }
 
 export function VehicleOCR() {
+  const { user } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
@@ -59,24 +61,43 @@ export function VehicleOCR() {
   }, []);
 
   const handleOCRProcess = async () => {
-    if (!selectedFile) {
-      toast.error("Please select a file first");
+    if (!selectedFile || !user) {
+      toast.error("Please select a file and ensure you're logged in");
       return;
     }
 
     setIsProcessing(true);
     try {
-      // Convert file to base64 for OCR
-      const base64 = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.readAsDataURL(selectedFile);
+      // Upload file to Supabase Storage first
+      const fileName = `insurance-${Date.now()}-${selectedFile.name}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('documents')
+        .upload(fileName, selectedFile);
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL for the uploaded file
+      const { data: { publicUrl } } = supabase.storage
+        .from('documents')
+        .getPublicUrl(uploadData.path);
+
+      // Process with OCR using the edge function
+      const { data, error } = await supabase.functions.invoke('process-vehicle-ocr', {
+        body: {
+          file_url: publicUrl,
+          user_id: user.id,
+          usage_type: usageType || 'personal'
+        }
       });
 
-      // Process with OCR
-      const result = await processInsuranceDocument(base64);
-      setOcrResult(result);
-      toast.success("Insurance document processed successfully!");
+      if (error) throw error;
+
+      if (data.success) {
+        setOcrResult(data.data.extracted_data);
+        toast.success("Vehicle document processed successfully!");
+      } else {
+        throw new Error(data.error);
+      }
     } catch (error) {
       console.error("OCR processing error:", error);
       toast.error("Failed to process document");
@@ -95,37 +116,30 @@ export function VehicleOCR() {
   };
 
   const handleSaveVehicle = async () => {
-    if (!ocrResult || !ownerPhone || !usageType) {
-      toast.error("Please complete all required fields");
+    if (!ocrResult || !user) {
+      toast.error("Please ensure you're logged in and have processed a document");
       return;
     }
 
-    // Normalize phone number to local format
-    const localPhone = ownerPhone.startsWith("+250") ? `0${ownerPhone.slice(4)}` : ownerPhone;
-
     setIsSaving(true);
     try {
-      const vehicleData: VehicleData = {
-        plate: ocrResult.plate || "",
-        vin: ocrResult.vin,
-        make: ocrResult.make,
-        model: ocrResult.model,
-        model_year: ocrResult.model_year,
-        usage_type: usageType as VehicleData['usage_type'],
-        owner_phone: localPhone,
-        insurance_provider: ocrResult.insurance_provider,
-        insurance_policy: ocrResult.insurance_policy,
-        insurance_expiry: ocrResult.insurance_expiry
-      };
+      // The vehicle data should already be saved by the OCR function
+      // This is just for manual verification/updates if needed
+      const { data, error } = await supabase
+        .from('vehicles')
+        .update({ verified: true })
+        .eq('user_id', user.id)
+        .eq('plate', ocrResult.plate)
+        .select()
+        .single();
 
-      const result = await saveVehicleData(vehicleData);
-      if (result.success) {
-        toast.success("Vehicle registered successfully!");
-        clearSelection();
-      }
+      if (error) throw error;
+
+      toast.success("Vehicle verified successfully!");
+      clearSelection();
     } catch (error) {
       console.error("Save error:", error);
-      toast.error("Failed to save vehicle data");
+      toast.error("Failed to verify vehicle data");
     } finally {
       setIsSaving(false);
     }
@@ -190,9 +204,28 @@ export function VehicleOCR() {
                   </div>
                 )}
 
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <Label className="text-sm font-medium">Usage Type *</Label>
+                    <Select value={usageType} onValueChange={setUsageType}>
+                      <SelectTrigger className="mt-1">
+                        <SelectValue placeholder="Select usage type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="moto_taxi">Moto Taxi</SelectItem>
+                        <SelectItem value="cab">Cab</SelectItem>
+                        <SelectItem value="liffan">Liffan</SelectItem>
+                        <SelectItem value="truck">Truck</SelectItem>
+                        <SelectItem value="rental">Rental</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
                 <Button 
                   onClick={handleOCRProcess}
-                  disabled={isProcessing}
+                  disabled={isProcessing || !usageType}
                   className="w-full bg-gradient-primary hover:opacity-90"
                 >
                   <Eye className="h-4 w-4 mr-2" />
@@ -309,36 +342,16 @@ export function VehicleOCR() {
                    </div>
                  </div>
 
-                 {/* Owner Information */}
+                 {/* Verification Status */}
                  <div className="border-t pt-4 mt-4">
-                   <h4 className="font-medium mb-3 flex items-center gap-2">
-                     <Car className="h-4 w-4" />
-                     Owner Information
-                   </h4>
-                   <div className="grid grid-cols-2 gap-4">
-                     <div>
-                       <Label className="text-sm font-medium">Owner Phone *</Label>
-                       <Input 
-                         value={ownerPhone} 
-                         onChange={(e) => setOwnerPhone(e.target.value)}
-                         className="mt-1" 
-                         placeholder="0788123456"
-                       />
-                     </div>
-                     <div>
-                       <Label className="text-sm font-medium">Usage Type *</Label>
-                       <Select value={usageType} onValueChange={setUsageType}>
-                         <SelectTrigger className="mt-1">
-                           <SelectValue placeholder="Select usage type" />
-                         </SelectTrigger>
-                         <SelectContent>
-                           <SelectItem value="personal">Personal</SelectItem>
-                           <SelectItem value="commercial">Commercial</SelectItem>
-                           <SelectItem value="taxi">Taxi</SelectItem>
-                           <SelectItem value="motorcycle">Motorcycle</SelectItem>
-                         </SelectContent>
-                       </Select>
-                     </div>
+                   <div className="flex items-center justify-between">
+                     <h4 className="font-medium flex items-center gap-2">
+                       <Car className="h-4 w-4" />
+                       Verification Status
+                     </h4>
+                     <Badge variant="secondary">
+                       Pending Verification
+                     </Badge>
                    </div>
                  </div>
 
@@ -348,10 +361,11 @@ export function VehicleOCR() {
                    </Button>
                    <Button 
                      onClick={handleSaveVehicle}
-                     disabled={isSaving || !ownerPhone || !usageType}
+                     disabled={isSaving}
                      className="flex-1 bg-gradient-primary hover:opacity-90"
                    >
-                     {isSaving ? "Saving..." : "Save Vehicle Data"}
+                     <CheckCircle className="h-4 w-4 mr-2" />
+                     {isSaving ? "Verifying..." : "Verify Vehicle"}
                    </Button>
                  </div>
               </div>

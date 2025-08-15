@@ -15,7 +15,7 @@ import { InsuranceAddons } from "@/components/admin/InsuranceAddons";
 import { InsurancePA } from "@/components/admin/InsurancePA";
 import { PaymentPlans } from "@/components/admin/PaymentPlans";
 import { QRCodeGenerator } from "@/components/admin/QRCodeGenerator";
-import { WhatsAppLogs } from "@/components/admin/WhatsAppLogs";
+import { WhatsAppWebhookLogs } from "@/components/admin/WhatsAppWebhookLogs";
 import { InsuranceBackoffice } from "@/components/admin/InsuranceBackoffice";
 import { ScanQRFlow } from "@/components/admin/ScanQRFlow";
 import { NearbyDriversFlow } from "@/components/workflows/NearbyDriversFlow";
@@ -81,7 +81,7 @@ export function HubDashboard() {
       case "qr-generator":
         return <QRCodeGenerator />;
       case "whatsapp-logs":
-        return <WhatsAppLogs />;
+        return <WhatsAppWebhookLogs />;
       case "insurance-backoffice":
         return <InsuranceBackoffice />;
       case "scan-qr":
