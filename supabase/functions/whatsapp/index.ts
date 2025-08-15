@@ -6,8 +6,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Environment variables
-const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN");
+// Environment variables - try multiple possible names
+const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN") || 
+                     Deno.env.get("META_VERIFY_TOKEN") || 
+                     Deno.env.get("VERIFY_TOKEN") ||
+                     "bd0e7b6f4a2c9d83f1e57a0c6b3d48e9"; // Temporary hardcode
 const SB_URL = Deno.env.get("SUPABASE_URL");
 const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
