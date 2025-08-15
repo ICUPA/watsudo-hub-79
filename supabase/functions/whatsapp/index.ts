@@ -3,7 +3,13 @@ import { sb, ok, bad, sendText, sendButtons, sendList, sendImage, fetchMediaByte
 import * as base64 from "https://deno.land/std@0.223.0/encoding/base64.ts";
 import QRCode from "https://deno.land/x/qrcode@v2.0.0/mod.ts";
 
-const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN")!;
+const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN");
+
+// Debug logging at startup
+console.log("🔧 WhatsApp Function Environment Status:");
+console.log("WHATSAPP_VERIFY_TOKEN:", VERIFY_TOKEN ? `SET (${VERIFY_TOKEN.length} chars)` : "NOT SET");
+console.log("SUPABASE_URL:", Deno.env.get("SUPABASE_URL") ? "SET" : "NOT SET");
+console.log("SUPABASE_SERVICE_ROLE_KEY:", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ? "SET" : "NOT SET");
 
 /** Main menu structure */
 const MAIN_MENU = [
@@ -285,7 +291,21 @@ Deno.serve(async (req) => {
     const mode = url.searchParams.get("hub.mode");
     const token = url.searchParams.get("hub.verify_token");
     const challenge = url.searchParams.get("hub.challenge");
-    if (mode === "subscribe" && token === VERIFY_TOKEN) return new Response(challenge ?? "", { status: 200 });
+    
+    console.log(`🔐 Verification attempt: mode=${mode}, token=${token}, challenge=${challenge}`);
+    console.log(`🔑 Expected token: ${VERIFY_TOKEN || "NOT SET"}`);
+    
+    if (!VERIFY_TOKEN) {
+      console.error("❌ VERIFY_TOKEN not configured");
+      return bad("Webhook not configured", 500);
+    }
+    
+    if (mode === "subscribe" && token === VERIFY_TOKEN) {
+      console.log("✅ Verification successful");
+      return new Response(challenge ?? "", { status: 200 });
+    }
+    
+    console.log("❌ Verification failed");
     return bad("Verification failed", 403);
   }
 
