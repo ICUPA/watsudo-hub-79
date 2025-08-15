@@ -17,83 +17,91 @@ console.log("WHATSAPP_VERIFY_TOKEN:", VERIFY_TOKEN ? `SET (${VERIFY_TOKEN.length
 console.log("SUPABASE_URL:", SB_URL ? "SET" : "NOT SET");
 console.log("SUPABASE_SERVICE_ROLE_KEY:", SB_SERVICE ? "SET" : "NOT SET");
 
-if (!SB_URL || !SB_SERVICE) {
-  console.error("❌ Missing Supabase credentials");
-}
-
 const sb = SB_URL && SB_SERVICE ? createClient(SB_URL, SB_SERVICE) : null;
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  try {
+    // Handle CORS preflight requests
+    if (req.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
+    }
 
-  const url = new URL(req.url);
-  console.log(`📞 ${req.method} ${url.pathname}${url.search}`);
+    const url = new URL(req.url);
+    console.log(`📞 ${req.method} ${url.pathname}${url.search}`);
 
-  // GET: webhook verification
-  if (req.method === "GET") {
-    const mode = url.searchParams.get("hub.mode");
-    const token = url.searchParams.get("hub.verify_token");
-    const challenge = url.searchParams.get("hub.challenge");
-    
-    console.log(`🔐 Verification attempt: mode=${mode}, token=${token}, challenge=${challenge}`);
-    console.log(`🔑 Expected token: ${VERIFY_TOKEN || "NOT SET"}`);
-    
-    if (!VERIFY_TOKEN) {
-      console.error("❌ VERIFY_TOKEN not configured");
-      return new Response("Webhook not configured", { 
-        status: 500,
+    // Debug endpoint
+    if (url.pathname.endsWith('/debug')) {
+      return new Response(JSON.stringify({
+        verify_token: VERIFY_TOKEN ? "SET" : "NOT SET",
+        supabase_url: SB_URL ? "SET" : "NOT SET",
+        service_key: SB_SERVICE ? "SET" : "NOT SET"
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // GET: webhook verification
+    if (req.method === "GET") {
+      const mode = url.searchParams.get("hub.mode");
+      const token = url.searchParams.get("hub.verify_token");
+      const challenge = url.searchParams.get("hub.challenge");
+      
+      console.log(`🔐 Verification attempt: mode=${mode}, token=${token}, challenge=${challenge}`);
+      console.log(`🔑 Expected token: ${VERIFY_TOKEN || "NOT SET"}`);
+      
+      if (!VERIFY_TOKEN) {
+        console.error("❌ VERIFY_TOKEN not configured");
+        return new Response("Webhook not configured", { 
+          status: 500,
+          headers: corsHeaders
+        });
+      }
+      
+      if (mode === "subscribe" && token === VERIFY_TOKEN) {
+        console.log("✅ Verification successful");
+        return new Response(challenge ?? "", { 
+          status: 200,
+          headers: corsHeaders
+        });
+      }
+      
+      console.log("❌ Verification failed");
+      return new Response("Verification failed", { 
+        status: 403,
         headers: corsHeaders
       });
     }
-    
-    if (mode === "subscribe" && token === VERIFY_TOKEN) {
-      console.log("✅ Verification successful");
-      return new Response(challenge ?? "", { 
-        status: 200,
-        headers: corsHeaders
-      });
-    }
-    
-    console.log("❌ Verification failed");
-    return new Response("Verification failed", { 
-      status: 403,
-      headers: corsHeaders
-    });
-  }
 
-  // POST: webhook messages
-  if (req.method === "POST") {
-    try {
+    // POST: webhook messages
+    if (req.method === "POST") {
       const body = await req.json();
       console.log("📨 Incoming webhook:", JSON.stringify(body, null, 2));
       
-      // Log the webhook payload
-      await sb.from("whatsapp_logs").insert({
-        direction: "in",
-        phone_number: "",
-        message_type: "webhook",
-        message_content: JSON.stringify(body),
-        metadata: body
-      });
+      if (sb) {
+        await sb.from("whatsapp_logs").insert({
+          direction: "in",
+          phone_number: "",
+          message_type: "webhook", 
+          message_content: JSON.stringify(body),
+          metadata: body
+        });
+      }
 
-      // For now, just acknowledge receipt
       return new Response(JSON.stringify({ status: "received" }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
-    } catch (error) {
-      console.error("❌ Webhook processing error:", error);
-      return new Response("Processing error", { 
-        status: 500,
-        headers: corsHeaders
-      });
     }
-  }
 
-  return new Response("Method not allowed", { 
-    status: 405,
-    headers: corsHeaders
-  });
+    return new Response("Method not allowed", { 
+      status: 405,
+      headers: corsHeaders
+    });
+    
+  } catch (error) {
+    console.error("❌ Function error:", error);
+    return new Response(`Error: ${error.message}`, { 
+      status: 500,
+      headers: corsHeaders
+    });
+  }
 });
