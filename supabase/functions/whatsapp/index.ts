@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import * as base64 from "https://deno.land/std@0.223.0/encoding/base64.ts";
-import QRCode from "https://deno.land/x/qrcode@v2.0.0/mod.ts";
+import { toDataURL } from "https://deno.land/x/qrcode@v2.0.0/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -124,7 +124,7 @@ async function generateQRCode(phone: string, amount?: number) {
   const localPhone = phone.startsWith("+250") ? `0${phone.slice(4)}` : phone.replace(/^\+/, '');
   const ussd = amount ? `*182*1*1*${localPhone}*${amount}#` : `*182*1*1*${localPhone}#`;
   
-  const dataUrl = await QRCode.toDataURL(ussd, { errorCorrectionLevel: "H", margin: 2, scale: 8 });
+  const dataUrl = await toDataURL(ussd, { errorCorrectionLevel: "H", margin: 2, scale: 8 });
   const bytes = base64.decode(dataUrl.split(",")[1]);
   
   if (sb) {
