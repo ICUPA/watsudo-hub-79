@@ -95,13 +95,15 @@ async function fetchMedia(mediaId:string){
 async function getOrCreateUser(wa_phone:string, wa_name?:string){
   let { data: profiles } = await sb.from("profiles").select("*").eq("wa_phone",wa_phone).limit(1);
   if(!profiles?.length){
-    const { data } = await sb.from("profiles").insert({wa_phone,wa_name}).select("*").single();
+    const { data } = await sb.from("profiles").insert({wa_phone,wa_name,user_id:null}).select("*").single();
     profiles = [data];
   }
   const user = profiles[0];
-  let { data: sessions } = await sb.from("chat_sessions").select("*").eq("user_id",user.user_id || user.id).limit(1);
+  if (!user) throw new Error("Failed to create or fetch user profile");
+  
+  let { data: sessions } = await sb.from("chat_sessions").select("*").eq("user_id",user.id).limit(1);
   if(!sessions?.length){
-    const { data: s2 } = await sb.from("chat_sessions").insert({user_id: user.user_id || user.id}).select("*").single();
+    const { data: s2 } = await sb.from("chat_sessions").insert({user_id: user.id}).select("*").single();
     sessions = [s2];
   }
   return { user, session: sessions[0] as any };
@@ -216,7 +218,7 @@ Deno.serve(async (req) => {
     if (iid === "INSURANCE") {
       await setState(session.id, INS_STATES.CHECK, {});
       // Do we have any vehicle?
-      const { data: vs } = await sb.from("vehicles").select("*").eq("user_id",user.user_id || user.id).limit(1);
+      const { data: vs } = await sb.from("vehicles").select("*").eq("user_id",user.id).limit(1);
       if (!vs?.length) {
         await setState(session.id, INS_STATES.COLLECT, {});
         await text(to, "Please send:\n1) Carte Jaune (photo/PDF)\n2) Old Insurance (photo/PDF)\nReply 'Agent' for human support.\nSend 'Done' when finished.");

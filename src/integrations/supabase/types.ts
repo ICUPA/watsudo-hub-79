@@ -342,7 +342,7 @@ export type Database = {
           locale: string
           role: Database["public"]["Enums"]["user_role"]
           updated_at: string
-          user_id: string
+          user_id: string | null
           wa_name: string | null
           wa_phone: string
         }
@@ -354,7 +354,7 @@ export type Database = {
           locale?: string
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
-          user_id: string
+          user_id?: string | null
           wa_name?: string | null
           wa_phone: string
         }
@@ -366,7 +366,7 @@ export type Database = {
           locale?: string
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
-          user_id?: string
+          user_id?: string | null
           wa_name?: string | null
           wa_phone?: string
         }
