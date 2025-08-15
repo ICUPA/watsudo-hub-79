@@ -23,7 +23,9 @@ console.log("SUPABASE_SERVICE_ROLE_KEY:", SB_SERVICE ? "SET" : "NOT SET");
 const sb = SB_URL && SB_SERVICE ? createClient(SB_URL, SB_SERVICE) : null;
 
 // WhatsApp API helpers
-const ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
+const ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN") || 
+                     Deno.env.get("META_ACCESS_TOKEN") ||
+                     "YOUR_ACCESS_TOKEN_HERE"; // Replace with actual token
 const PHONE_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
 
 async function sendMainMenu(to: string) {
