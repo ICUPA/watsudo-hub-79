@@ -11,8 +11,8 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const sb = createClient(supabaseUrl, supabaseServiceKey);
 
 const GRAPH = "https://graph.facebook.com/v20.0";
-const WABA_PHONE_ID = Deno.env.get('META_PHONE_NUMBER_ID')!;
-const WABA_TOKEN = Deno.env.get('META_ACCESS_TOKEN')!;
+const WABA_PHONE_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || Deno.env.get('META_PHONE_NUMBER_ID')!;
+const WABA_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN") || Deno.env.get('META_ACCESS_TOKEN')!;
 
 async function sendWhatsAppDocument(to: string, documentUrl: string, caption: string) {
   try {

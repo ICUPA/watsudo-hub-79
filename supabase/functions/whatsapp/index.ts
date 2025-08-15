@@ -6,10 +6,10 @@ import * as base64 from "https://deno.land/std@0.223.0/encoding/base64.ts";
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
-const WABA_PHONE_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID")!;
-const WABA_VERIFY = Deno.env.get("WHATSAPP_VERIFY_TOKEN")!;
-const WABA_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN")!;
-const WABA_APP_SECRET = Deno.env.get("WHATSAPP_APP_SECRET")!;
+const WABA_PHONE_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || Deno.env.get("META_PHONE_NUMBER_ID")!;
+const WABA_VERIFY = Deno.env.get("WHATSAPP_VERIFY_TOKEN") || Deno.env.get("META_WABA_VERIFY_TOKEN")!;
+const WABA_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN") || Deno.env.get("META_ACCESS_TOKEN")!;
+const WABA_APP_SECRET = Deno.env.get("WHATSAPP_APP_SECRET") || Deno.env.get("META_WABA_APP_SECRET")!;
 const GRAPH = "https://graph.facebook.com/v20.0";
 const sb = createClient(SB_URL, SB_SERVICE);
 
