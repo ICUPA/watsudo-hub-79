@@ -1,0 +1,152 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: '18'
+  DENO_VERSION: '1.40.x'
+
+jobs:
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+    name: Lint and Type Check
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Setup Deno
+      uses: denoland/setup-deno@v1
+      with:
+        deno-version: ${{ env.DENO_VERSION }}
+    
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Lint Frontend
+      run: npm run lint
+      
+    - name: Type check Frontend
+      run: npm run type-check
+      
+    - name: Lint Edge Functions
+      run: deno lint supabase/functions/
+      
+    - name: Format check Edge Functions
+      run: deno fmt --check supabase/functions/
+
+  test:
+    runs-on: ubuntu-latest
+    name: Test Suite
+    needs: lint-and-typecheck
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        
+    - name: Setup Deno
+      uses: denoland/setup-deno@v1
+      with:
+        deno-version: ${{ env.DENO_VERSION }}
+    
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run Frontend Tests
+      run: npm test
+      
+    - name: Run Edge Function Tests
+      run: deno test --allow-all supabase/functions/
+      
+  build:
+    runs-on: ubuntu-latest
+    name: Build Check
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Build project
+      run: npm run build
+      
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: dist/
+
+  security-scan:
+    runs-on: ubuntu-latest
+    name: Security Scan
+    needs: lint-and-typecheck
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run security audit
+      run: npm audit --audit-level=moderate
+      
+    - name: Check for secrets in code
+      run: |
+        if grep -r "sk-.*" --include="*.ts" --include="*.js" --include="*.tsx" --include="*.jsx" .; then
+          echo "❌ Potential secrets found in code!"
+          exit 1
+        fi
+        echo "✅ No secrets detected in code"
+
+  deploy-staging:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    name: Deploy to Staging
+    needs: [build, security-scan]
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to staging
+      run: echo "Deploy to staging environment"
+      # Add actual deployment steps here
+
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    name: Deploy to Production
+    needs: [build, security-scan]
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to production
+      run: echo "Deploy to production environment"
+      # Add actual deployment steps here

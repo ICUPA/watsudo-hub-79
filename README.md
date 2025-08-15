@@ -1,198 +1,150 @@
-# Mobility + USSD QR Hub — Production Setup Guide
+# Mobility + USSD QR Hub — Production Platform
 
-## Overview
-A WhatsApp-first mobility and payment platform with QR code generation, insurance quotes, and ride booking capabilities.
+A production-ready WhatsApp-first platform providing mobility services, insurance quotes, and USSD QR code generation for Rwanda. Built with Supabase, Deno Edge Functions, and Next.js.
 
-## Features
-- **WhatsApp Integration**: Users interact exclusively via WhatsApp
-- **QR Codes**: Generate MoMo USSD QR codes with phone or merchant codes
-- **Insurance**: Moto insurance with OCR document processing
-- **Mobility**: Nearby drivers, ride booking, vehicle management
-- **Admin Panel**: Web dashboard for monitoring and management
+## 🚀 Features
 
-## Prerequisites
-- Supabase project with PostGIS enabled
-- WhatsApp Business API account
-- OpenAI API key (for OCR)
+### WhatsApp Interface
+- **Mobility Services**: Find nearby drivers, schedule trips, add vehicles via OCR
+- **Insurance (Moto)**: Document collection, quotation flow, certificate issuance  
+- **QR Codes**: Generate USSD QR codes for MoMo payments (phone or merchant code)
+- **Interactive UI**: Buttons, lists, location sharing, media uploads
 
-## Environment Variables
+### Production Enhancements
+- ✅ **Webhook Security**: Signature verification (HMAC-SHA256)
+- ✅ **Error Handling**: Comprehensive error handling with graceful fallbacks
+- ✅ **Idempotency**: Prevents duplicate message processing
+- ✅ **Retry Logic**: Exponential backoff for transient failures
+- ✅ **Logging**: Structured JSON logs with correlation IDs
+- ✅ **Validation**: Strict flow ID validation and input sanitization
+- ✅ **Performance**: Optimized database indexes and queries
+- ✅ **Storage**: Canonical bucket names and secure policies
 
-### Required for Edge Functions
+## 📋 Environment Setup
+
+### Canonical Environment Variables
 ```bash
+# Supabase
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-WHATSAPP_PHONE_NUMBER_ID=your-phone-number-id
-WHATSAPP_ACCESS_TOKEN=your-access-token
-WHATSAPP_VERIFY_TOKEN=your-verify-token
-WHATSAPP_APP_SECRET=your-app-secret
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+
+# WhatsApp Business API (Canonical)
+META_PHONE_NUMBER_ID=your-phone-number-id
+META_ACCESS_TOKEN=your-access-token
+META_WABA_VERIFY_TOKEN=your-verify-token
+META_WABA_APP_SECRET=your-app-secret
+
+# External APIs
 OPENAI_API_KEY=your-openai-api-key
 TIMEZONE=Africa/Kigali
 ```
 
-### Required for Admin Panel
-```bash
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-```
+Legacy `WHATSAPP_*` variables are supported as fallbacks.
 
-## Database Setup
+## 🛠️ Quick Start
 
-1. **Extensions**: PostGIS and pgcrypto are automatically enabled
-2. **Storage Buckets**: 
-   - `qr` (public) - QR code images
-   - `vehicle_docs` (private) - Insurance certificates
-   - `quotes` (private) - Quote PDFs
-   - `certificates` (private) - Insurance certificates
-
-3. **Core Tables**:
-   - `profiles` - User profiles and WhatsApp data
-   - `chat_sessions` - Conversation state management
-   - `vehicles` - Vehicle records with OCR data
-   - `drivers` - Driver profiles and locations
-   - `rides` - Ride requests and tracking
-   - `insurance_quotes` - Insurance quotations
-   - `qr_generations` - QR code generation logs
-   - `whatsapp_logs` - All WhatsApp interactions
-
-## WhatsApp Setup
-
-1. **Configure Webhook**:
-   - URL: `https://your-project.supabase.co/functions/v1/whatsapp`
-   - Verify Token: Use your `WHATSAPP_VERIFY_TOKEN`
-   - Subscribe to: `messages`
-
-2. **Test Webhook**:
+1. **Clone and Install**
    ```bash
-   curl -X GET "https://your-project.supabase.co/functions/v1/whatsapp?hub.mode=subscribe&hub.verify_token=YOUR_TOKEN&hub.challenge=test"
+   git clone <repository-url>
+   cd mobility-ussd-qr-hub
+   npm install
    ```
 
-## User Flows
+2. **Configure Environment**
+   ```bash
+   cp .env.example .env.local
+   # Edit .env.local with your credentials
+   ```
 
-### Main Menu
-Users start with: Mobility • Insurance • QR Codes • Profile
+3. **Database Ready**: Migrations have been applied with:
+   - Performance indexes on critical tables
+   - Canonical storage buckets (`qr`, `vehicle_docs`, `quotes`, `certificates`)
+   - RLS policies for data security
+   - Optimized functions for nearby drivers
 
-### QR Code Generation
-1. Choose identifier type (Phone or MoMo Code)
-2. Select amount mode (With amount or No amount)
-3. Receive QR image + tel: link for USSD dialing
+4. **Configure WhatsApp Webhook**
+   - URL: `https://YOUR_PROJECT_ID.supabase.co/functions/v1/whatsapp`
+   - Verify token: Your `META_WABA_VERIFY_TOKEN`
+   - Subscribe to: `messages`
 
-### Insurance (Moto)
-1. Upload insurance documents (OCR processing)
-2. Select start date and period
-3. Choose add-ons (Third-party, COMESA, Personal Accident)
-4. Receive quotation PDF
-5. Pay via USSD
-6. Receive certificate
+## 🧪 Testing
 
-### Mobility
-1. **Nearby Drivers**: Share location → See available drivers
-2. **Schedule Trip**: Set pickup/dropoff + time window
-3. **Add Vehicle**: Upload insurance cert for OCR parsing
-
-## Admin Panel Features
-
-- **Dashboard**: Overview of users, rides, quotes
-- **User Management**: View/edit user profiles and settings
-- **Vehicle Management**: Verify vehicles and view documents
-- **Insurance Backoffice**: Attach quotes, issue certificates
-- **WhatsApp Logs**: Monitor all conversations
-- **QR Generator**: Admin QR code generation tool
-
-## Production Deployment
-
-### 1. Set Environment Variables
-Add all required variables to:
-- Supabase Edge Functions settings
-- Admin panel hosting platform
-
-### 2. Deploy Edge Functions
-Functions are automatically deployed:
-- `whatsapp` - Main webhook handler
-- `admin-api` - Backoffice operations
-- `generate-qr` - QR code generation
-- `process-vehicle-ocr` - Document OCR
-
-### 3. Configure Security
-- RLS policies enforce data isolation
-- Webhook signature verification enabled
-- Rate limiting on endpoints
-- Secure storage for sensitive documents
-
-### 4. Test Flows
-Test each user journey:
 ```bash
-# Send test message
-curl -X POST "https://graph.facebook.com/v21.0/YOUR_PHONE_ID/messages" \
-  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"messaging_product":"whatsapp","to":"PHONE","type":"text","text":{"body":"Hi"}}'
+# Frontend tests
+npm test
+
+# Edge function tests  
+deno test --allow-all supabase/functions/
+
+# Linting
+npm run lint
+deno lint supabase/functions/
 ```
 
-## Monitoring
+### Test Flows
+1. **QR Generation**: Send "Hi" → QR Codes → Phone → Amount → Receive QR + tel: link
+2. **Vehicle OCR**: Mobility → Add Vehicle → Upload insurance cert → Verify extraction
+3. **Insurance**: Insurance → Upload docs → Select options → Receive quote
 
-### Logs
-- Edge function logs: Supabase Dashboard → Functions → Logs
-- WhatsApp logs: Admin panel → Logs
-- Error tracking: JSON structured logging
+## 📊 Monitoring
 
-### Metrics
-- Message success/failure rates
-- Response times
-- User engagement
-- Conversion rates (quotes → certificates)
+- **Health Check**: `GET /functions/v1/whatsapp/health`
+- **Logs**: Structured JSON with correlation IDs in `whatsapp_logs` table
+- **Admin Panel**: Real-time monitoring of users, vehicles, quotes
 
-## Troubleshooting
+## 🔐 Security Features
+
+- **Authentication**: RLS policies on all tables
+- **Validation**: Input sanitization and flow ID validation  
+- **Storage**: Secure policies for private documents
+- **Webhook**: Signature verification prevents spoofing
+- **Idempotency**: Duplicate message protection
+
+## 🚀 CI/CD
+
+GitHub Actions pipeline includes:
+- Linting and type checking (Deno + ESLint)
+- Security scanning
+- Unit tests
+- Build verification
+- Deployment gates
+
+## 📚 Architecture
+
+```
+WhatsApp Users ←→ WhatsApp Business API ←→ Edge Functions ←→ PostgreSQL + Storage
+                                               ↓
+                                         Admin Panel (Next.js)
+```
+
+### Key Components
+- **Shared Utilities** (`_shared/wa.ts`): Message sending, validation, phone normalization
+- **WhatsApp Handler**: Production-ready webhook with retry logic and error handling  
+- **OCR Processing**: GPT-4o Vision for document extraction
+- **QR Generation**: USSD string building with proper tel: link encoding
+- **Storage Layer**: Public QR codes, private documents with signed URLs
+
+## 🐛 Troubleshooting
 
 ### Common Issues
+- **Messages not sending**: Check Edge Function logs, verify tokens
+- **OCR failures**: Verify OpenAI key, check image format
+- **Storage issues**: Confirm bucket names, check RLS policies
 
-1. **Webhook not receiving messages**:
-   - Verify webhook URL and token
-   - Check signature verification
-   - Review edge function logs
+### Debug Tools
+- Correlation IDs in logs for request tracing
+- Admin panel WhatsApp conversation viewer
+- Health check endpoint for system status
 
-2. **OCR failures**:
-   - Ensure OpenAI API key is set
-   - Check image quality and format
-   - Review process-vehicle-ocr logs
+## 📞 Support
 
-3. **QR generation errors**:
-   - Verify storage bucket permissions
-   - Check QR generation function logs
-   - Ensure proper USSD format
+1. Check Edge Function logs in Supabase dashboard
+2. Review WhatsApp logs in admin panel  
+3. Monitor database performance
+4. Check GitHub Issues for known problems
 
-### Debug Mode
-Enable detailed logging by adding debug context to functions.
+---
 
-## Security Considerations
-
-- **Webhook Security**: Signature verification prevents spoofing
-- **Data Privacy**: RLS ensures users only see their data
-- **Storage Security**: Private buckets for sensitive documents
-- **API Security**: Service role for backend operations only
-
-## Performance Optimizations
-
-- **Database**: Indexes on frequently queried columns
-- **Caching**: Session state cached in database
-- **CDN**: Public assets served via Supabase CDN
-- **Connection Pooling**: Managed by Supabase
-
-## Scaling
-
-- **Horizontal**: Supabase auto-scales edge functions
-- **Database**: Connection pooling and read replicas
-- **Storage**: Unlimited with pay-per-use pricing
-- **WhatsApp**: Rate limits handled gracefully
-
-## Support
-
-For technical issues:
-1. Check edge function logs
-2. Review database logs  
-3. Monitor WhatsApp webhook logs
-4. Check admin panel error messages
-
-For business logic:
-1. Review user flow documentation
-2. Test with admin panel tools
-3. Verify state machine transitions
+**Production Status**: ✅ Ready for deployment with comprehensive error handling, security, and monitoring.
