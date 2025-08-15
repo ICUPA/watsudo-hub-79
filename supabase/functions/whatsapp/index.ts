@@ -99,9 +99,9 @@ async function getOrCreateUser(wa_phone:string, wa_name?:string){
     profiles = [data];
   }
   const user = profiles[0];
-  let { data: sessions } = await sb.from("chat_sessions").select("*").eq("user_id",user.id).limit(1);
+  let { data: sessions } = await sb.from("chat_sessions").select("*").eq("user_id",user.user_id || user.id).limit(1);
   if(!sessions?.length){
-    const { data: s2 } = await sb.from("chat_sessions").insert({user_id:user.id}).select("*").single();
+    const { data: s2 } = await sb.from("chat_sessions").insert({user_id: user.user_id || user.id}).select("*").single();
     sessions = [s2];
   }
   return { user, session: sessions[0] as any };
@@ -195,7 +195,14 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return ok({ok:true});
 
   const body = await req.json().catch(()=> ({}));
-  await sb.from("whatsapp_logs").insert({ direction:"in", payload:body });
+  await sb.from("whatsapp_logs").insert({ 
+    direction:"in", 
+    phone_number: body?.entry?.[0]?.changes?.[0]?.value?.contacts?.[0]?.wa_id || "unknown",
+    message_type: body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.type || "unknown",
+    message_content: JSON.stringify(body),
+    metadata: {},
+    status: "received"
+  });
   const entry = body?.entry?.[0]; const change = entry?.changes?.[0]?.value;
   const m = change?.messages?.[0]; const contact = change?.contacts?.[0];
   if(!m || !contact) return ok({});
@@ -211,7 +218,7 @@ Deno.serve(async (req) => {
     if (iid === "INSURANCE") {
       await setState(session.id, INS_STATES.CHECK, {});
       // Do we have any vehicle?
-      const { data: vs } = await sb.from("vehicles").select("*").eq("user_id",user.id).limit(1);
+      const { data: vs } = await sb.from("vehicles").select("*").eq("user_id",user.user_id || user.id).limit(1);
       if (!vs?.length) {
         await setState(session.id, INS_STATES.COLLECT, {});
         await text(to, "Please send:\n1) Carte Jaune (photo/PDF)\n2) Old Insurance (photo/PDF)\nReply 'Agent' for human support.\nSend 'Done' when finished.");
