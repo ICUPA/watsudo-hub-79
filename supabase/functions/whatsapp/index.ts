@@ -88,6 +88,8 @@ Deno.serve(async (req) => {
     if (url.pathname.endsWith('/debug')) {
       return new Response(JSON.stringify({
         verify_token: VERIFY_TOKEN ? "SET" : "NOT SET",
+        access_token: ACCESS_TOKEN ? "SET" : "NOT SET", 
+        phone_id: PHONE_ID ? "SET" : "NOT SET",
         supabase_url: SB_URL ? "SET" : "NOT SET",
         service_key: SB_SERVICE ? "SET" : "NOT SET"
       }), {
