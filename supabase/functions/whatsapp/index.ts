@@ -6,14 +6,18 @@ const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
-// Environment variable fallbacks for WHATSAPP_* -> META_*
-const WABA_PHONE_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || Deno.env.get("META_PHONE_NUMBER_ID")!;
-const WABA_VERIFY = Deno.env.get("WHATSAPP_VERIFY_TOKEN") || Deno.env.get("META_WABA_VERIFY_TOKEN")!;
-const WABA_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN") || Deno.env.get("META_ACCESS_TOKEN")!;
-const WABA_APP_SECRET = Deno.env.get("WHATSAPP_APP_SECRET") || Deno.env.get("META_WABA_APP_SECRET")!;
+// Canonical environment variables with legacy fallbacks
+const WABA_PHONE_ID = Deno.env.get("META_PHONE_NUMBER_ID") || Deno.env.get("WHATSAPP_PHONE_NUMBER_ID")!;
+const WABA_VERIFY = Deno.env.get("META_WABA_VERIFY_TOKEN") || Deno.env.get("WHATSAPP_VERIFY_TOKEN")!;
+const WABA_TOKEN = Deno.env.get("META_ACCESS_TOKEN") || Deno.env.get("WHATSAPP_ACCESS_TOKEN")!;
+const WABA_APP_SECRET = Deno.env.get("META_WABA_APP_SECRET") || Deno.env.get("WHATSAPP_APP_SECRET")!;
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 const sb = createClient(SB_URL, SB_SERVICE);
+
+// App metadata for health checks
+const APP_VERSION = "1.0.0";
+const BUILD_ID = Deno.env.get("DENO_DEPLOYMENT_ID") || "dev";
 
 // Structured logging
 function log(level: string, message: string, context: any = {}) {
