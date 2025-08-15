@@ -63,29 +63,129 @@ async function showMainMenu(to: string) {
 async function processMessage(from: string, message: any, interactiveId?: string) {
   console.log(`Processing message from ${from}, type: ${message.type}, interactive: ${interactiveId}`);
   
-  // Main menu navigation
-  if (interactiveId === "MOBILITY") {
-    await sendMessage(from, "🚕 Mobility services:\n- Nearby drivers\n- Schedule trips\n- Add vehicles\n\nComing soon!");
+  // Handle interactive button clicks
+  if (interactiveId) {
+    console.log(`🎯 Interactive button clicked: ${interactiveId}`);
+    
+    if (interactiveId === "MOBILITY") {
+      await sendButtons(from, "🚕 Mobility services - Choose an option:", [
+        { id: "NEARBY_DRIVERS", title: "🚗 Nearby Drivers" },
+        { id: "SCHEDULE_TRIP", title: "📅 Schedule Trip" },
+        { id: "ADD_VEHICLE", title: "🚙 Add Vehicle" },
+        { id: "BACK_MAIN", title: "⬅️ Back to Main" }
+      ]);
+      return;
+    }
+    
+    if (interactiveId === "INSURANCE") {
+      await sendButtons(from, "🛡️ Insurance services - Choose an option:", [
+        { id: "MOTOR_QUOTE", title: "📋 Motor Quote" },
+        { id: "CERTIFICATE", title: "📜 Certificate" },
+        { id: "CLAIMS", title: "🔧 Claims Support" },
+        { id: "BACK_MAIN", title: "⬅️ Back to Main" }
+      ]);
+      return;
+    }
+    
+    if (interactiveId === "QR") {
+      await sendButtons(from, "🔳 QR Code services - Choose type:", [
+        { id: "QR_PHONE", title: "📱 Phone Number" },
+        { id: "QR_CODE", title: "🔢 MoMo Code" },
+        { id: "QR_GENERATE", title: "⚡ Quick Generate" },
+        { id: "BACK_MAIN", title: "⬅️ Back to Main" }
+      ]);
+      return;
+    }
+    
+    // Handle sub-menu options
+    if (interactiveId === "NEARBY_DRIVERS") {
+      await sendMessage(from, "🚗 To find nearby drivers, please share your location using the attachment button (📎) → Location");
+      return;
+    }
+    
+    if (interactiveId === "SCHEDULE_TRIP") {
+      await sendMessage(from, "📅 Schedule Trip:\n1. Share pickup location\n2. Share destination\n3. Choose date & time\n\nStart by sharing your pickup location!");
+      return;
+    }
+    
+    if (interactiveId === "ADD_VEHICLE") {
+      await sendMessage(from, "🚙 Add Vehicle:\nPlease upload a clear photo of your vehicle's insurance certificate or registration document.");
+      return;
+    }
+    
+    if (interactiveId === "MOTOR_QUOTE") {
+      await sendMessage(from, "📋 Motor Insurance Quote:\nPlease provide:\n1. Vehicle registration/plate number\n2. Vehicle make and model\n3. Desired coverage period\n\nType your vehicle details to start.");
+      return;
+    }
+    
+    if (interactiveId === "QR_PHONE") {
+      await sendMessage(from, "📱 Generate QR for phone number:\nPlease send your mobile money phone number (e.g., 0788123456)");
+      return;
+    }
+    
+    if (interactiveId === "QR_CODE") {
+      await sendMessage(from, "🔢 Generate QR for MoMo code:\nPlease send your merchant/agent code (4-6 digits)");
+      return;
+    }
+    
+    if (interactiveId === "BACK_MAIN") {
+      await showMainMenu(from);
+      return;
+    }
+    
+    // Default for unhandled interactive IDs
+    await sendMessage(from, "⚠️ This feature is under development. Please try another option.");
     await showMainMenu(from);
     return;
   }
   
-  if (interactiveId === "INSURANCE") {
-    await sendMessage(from, "🛡️ Insurance services:\n- Motor insurance quotes\n- Certificate issuance\n- Claims support\n\nComing soon!");
-    await showMainMenu(from);
-    return;
-  }
-  
-  if (interactiveId === "QR") {
-    await sendMessage(from, "🔳 QR Code services:\n- Generate payment QR codes\n- USSD shortcuts\n- Mobile money integration\n\nComing soon!");
-    await showMainMenu(from);
-    return;
-  }
-  
-  // Default: show main menu for any text message
+  // Handle text messages and other types
   if (message.type === "text") {
+    const text = message.text?.body?.toLowerCase() || "";
+    
+    // Check for common greetings
+    if (text.includes("hi") || text.includes("hello") || text.includes("start") || text.includes("menu")) {
+      await showMainMenu(from);
+      return;
+    }
+    
+    // Check if it's a phone number for QR
+    if (/^(\+250|0)[7]\d{8}$/.test(text.replace(/\s/g, ""))) {
+      await sendMessage(from, `📱 Phone number received: ${text}\n\nGenerating QR code for mobile money...`);
+      // TODO: Generate QR code
+      await sendMessage(from, "QR code generation coming soon! 🔳");
+      await showMainMenu(from);
+      return;
+    }
+    
+    // Default response for text
+    await sendMessage(from, "👋 Welcome! I can help you with mobility, insurance, and QR code services.");
     await showMainMenu(from);
+    return;
   }
+  
+  // Handle location sharing
+  if (message.type === "location") {
+    const lat = message.location?.latitude;
+    const lng = message.location?.longitude;
+    await sendMessage(from, `📍 Location received: ${lat}, ${lng}\n\nSearching for nearby drivers...`);
+    // TODO: Find nearby drivers
+    await sendMessage(from, "Nearby drivers feature coming soon! 🚗");
+    await showMainMenu(from);
+    return;
+  }
+  
+  // Handle document/image uploads
+  if (message.type === "document" || message.type === "image") {
+    await sendMessage(from, "📄 Document received! Processing for vehicle registration...");
+    // TODO: Process document with OCR
+    await sendMessage(from, "Document processing coming soon! 🚙");
+    await showMainMenu(from);
+    return;
+  }
+  
+  // Default: show main menu
+  await showMainMenu(from);
 }
 
 // Main function
