@@ -3,7 +3,7 @@ import { sb, ok, bad, sendText, sendButtons, sendList, sendImage, fetchMediaByte
 import * as base64 from "https://deno.land/std@0.223.0/encoding/base64.ts";
 import QRCode from "https://deno.land/x/qrcode@v2.0.0/mod.ts";
 
-const VERIFY_TOKEN = Deno.env.get("META_VERIFY_TOKEN") || Deno.env.get("WHATSAPP_VERIFY_TOKEN")!;
+const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN")!;
 
 /** Main menu structure */
 const MAIN_MENU = [
