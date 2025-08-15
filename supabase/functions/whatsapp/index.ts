@@ -25,7 +25,7 @@ const sb = SB_URL && SB_SERVICE ? createClient(SB_URL, SB_SERVICE) : null;
 // WhatsApp API helpers
 const ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN") || 
                      Deno.env.get("META_ACCESS_TOKEN") ||
-                     "YOUR_ACCESS_TOKEN_HERE"; // Replace with actual token
+                     "EAAGHrMn6uugBO9xlSTNU1FsbnZB7AnBLCvTlgZCYQDZC8OZA7q3nrtxpxn3VgHiT8o9KbKQIyoPNrESHKZCq2c9B9lvNr2OsT8YDBewaDD1OzytQd74XlmSOgxZAVL6TEQpDT43zZCZBwQg9AZA5QPeksUVzmAqTaoNyIIaaqSvJniVmn6dW1rw88dbZAyR6VZBMTTpjQZDZD";
 const PHONE_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
 
 async function sendMainMenu(to: string) {
