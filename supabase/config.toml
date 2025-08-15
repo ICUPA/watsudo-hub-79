@@ -8,10 +8,19 @@ extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
 [functions.generate-qr]
-verify_jwt = true
+verify_jwt = false
 
 [functions.process-vehicle-ocr]
-verify_jwt = true
+verify_jwt = false
 
 [functions.whatsapp]
+verify_jwt = false
+
+[functions.admin-api]
+verify_jwt = false
+
+[functions.nearby-drivers]
+verify_jwt = false
+
+[functions.whatsapp-admin-bridge]
 verify_jwt = false

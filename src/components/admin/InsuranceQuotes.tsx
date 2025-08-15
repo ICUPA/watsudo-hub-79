@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { FileUpload } from "@/components/ui/FileUpload";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 interface InsuranceQuote {
@@ -46,45 +47,50 @@ export function InsuranceQuotes() {
   const loadQuotes = async () => {
     try {
       setLoading(true);
-      // Placeholder for Supabase query
-      // const { data } = await supabase
-      //   .from('insurance_quotes')
-      //   .select(`
-      //     *,
-      //     user:users(wa_id, phone_e164, display_name),
-      //     vehicle:vehicles(number_plate, usage_type)
-      //   `)
-      //   .eq('status', selectedStatus)
-      //   .order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('insurance_quotes')
+        .select(`
+          *
+        `)
+        .eq('status', selectedStatus)
+        .order('created_at', { ascending: false });
       
-      // Mock data for now
-      const mockQuotes: InsuranceQuote[] = [
-        {
-          id: '1',
-          user_id: 'user1',
-          vehicle_id: 'vehicle1',
-          start_date: '2024-01-15',
-          period_id: 'period1',
-          addons: ['third_party', 'comesa'],
-          status: 'pending_backoffice',
+      if (error) throw error;
+      
+      // Transform data to match interface
+      const transformedQuotes = data?.map(quote => {
+        const quoteData = quote.quote_data as any || {};
+        return {
+          id: quote.id,
+          user_id: quote.user_id || '',
+          vehicle_id: quote.vehicle_id || undefined,
+          start_date: quoteData.start_date || new Date().toISOString().split('T')[0],
+          period_id: quoteData.period_id || '',
+          addons: Array.isArray(quoteData.addons) ? quoteData.addons : [],
+          pa_category_id: quoteData.pa_category_id || undefined,
+          status: quote.status as 'pending_backoffice' | 'quoted' | 'awaiting_payment' | 'cancelled' | 'paid' | 'issued',
+          quote_pdf_path: quoteData.quote_pdf_path || undefined,
+          amount_cents: quoteData.amount_cents || undefined,
           currency: 'RWF',
-          created_at: '2024-01-10T10:00:00Z',
+          created_at: quote.created_at,
           user: {
-            wa_id: '250788123456',
-            phone_e164: '+250788123456',
-            display_name: 'John Doe'
+            wa_id: '',
+            phone_e164: undefined,
+            display_name: undefined
           },
           vehicle: {
-            number_plate: 'RAD123A',
-            usage_type: 'moto_taxi'
+            number_plate: 'Unknown',
+            usage_type: 'unknown'
           }
-        }
-      ];
+        };
+      }) || [];
       
-      setQuotes(mockQuotes.filter(q => q.status === selectedStatus));
+      setQuotes(transformedQuotes);
     } catch (error) {
       console.error('Error loading quotes:', error);
       toast.error('Failed to load insurance quotes');
+      // Fallback to empty array
+      setQuotes([]);
     } finally {
       setLoading(false);
     }
@@ -92,14 +98,17 @@ export function InsuranceQuotes() {
 
   const attachQuotePdf = async (quoteId: string, pdfPath: string) => {
     try {
-      // Placeholder for API call
-      // await fetch('/admin/api/quotes/attach-pdf', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ quote_id: quoteId, storage_path: pdfPath })
-      // });
+      const { data, error } = await supabase.functions.invoke('whatsapp-admin-bridge', {
+        body: { 
+          quote_id: quoteId, 
+          storage_path: pdfPath,
+          amount_cents: parseInt(selectedQuote?.amount_cents?.toString() || '0') * 100
+        }
+      });
       
-      toast.success('Quote PDF attached successfully');
+      if (error) throw error;
+      
+      toast.success('Quote PDF attached and sent to customer via WhatsApp');
       loadQuotes();
     } catch (error) {
       console.error('Error attaching PDF:', error);
