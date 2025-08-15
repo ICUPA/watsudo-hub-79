@@ -16,16 +16,25 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// Debug environment variables at startup
-console.log('🔧 WhatsApp Webhook Environment Check:', {
-  hasVerifyToken: !!VERIFY_TOKEN,
-  hasAccessToken: !!WHATSAPP_ACCESS_TOKEN,
-  hasPhoneId: !!WHATSAPP_PHONE_NUMBER_ID,
-  hasAppSecret: !!WHATSAPP_APP_SECRET,
-  verifyTokenLength: VERIFY_TOKEN?.length || 0,
-  accessTokenLength: WHATSAPP_ACCESS_TOKEN?.length || 0,
-  phoneIdLength: WHATSAPP_PHONE_NUMBER_ID?.length || 0
-});
+// Critical: Debug ALL environment variables at startup
+console.log('🔧 WhatsApp Webhook Environment Variables Status:');
+console.log('VERIFY_TOKEN:', VERIFY_TOKEN ? `SET (${VERIFY_TOKEN.length} chars)` : 'NOT SET');
+console.log('WHATSAPP_ACCESS_TOKEN:', WHATSAPP_ACCESS_TOKEN ? `SET (${WHATSAPP_ACCESS_TOKEN.length} chars)` : 'NOT SET');
+console.log('WHATSAPP_PHONE_NUMBER_ID:', WHATSAPP_PHONE_NUMBER_ID ? `SET (${WHATSAPP_PHONE_NUMBER_ID.length} chars)` : 'NOT SET');
+console.log('WHATSAPP_APP_SECRET:', WHATSAPP_APP_SECRET ? `SET (${WHATSAPP_APP_SECRET.length} chars)` : 'NOT SET');
+console.log('SUPABASE_URL:', supabaseUrl ? `SET (${supabaseUrl.length} chars)` : 'NOT SET');
+console.log('SUPABASE_SERVICE_ROLE_KEY:', supabaseServiceKey ? `SET (${supabaseServiceKey.length} chars)` : 'NOT SET');
+
+// Validate critical environment variables
+if (!VERIFY_TOKEN) {
+  console.error('❌ CRITICAL: WHATSAPP_VERIFY_TOKEN is not set!');
+}
+if (!WHATSAPP_ACCESS_TOKEN) {
+  console.error('❌ CRITICAL: WHATSAPP_ACCESS_TOKEN is not set!');
+}
+if (!WHATSAPP_PHONE_NUMBER_ID) {
+  console.error('❌ CRITICAL: WHATSAPP_PHONE_NUMBER_ID is not set!');
+}
 
 interface WhatsAppMessage {
   from: string;
@@ -246,9 +255,27 @@ async function processConversationFlow(message: WhatsAppMessage): Promise<void> 
     switch (conversationState.step) {
       case 'main_menu':
         if (content === '1' || content.includes('qr') || content.includes('generate')) {
-          botResponse = "💳 **Generate QR Code**\n\nChoose amount mode:\n1️⃣ With amount\n2️⃣ No amount (recipient chooses)";
-          newState.step = 'qr_amount';
-          newState.userMomo = '0788767816'; // Mock MoMo for testing
+          // Check for saved MoMo number
+          const userId = await findOrCreateUser(from);
+          if (userId) {
+            newState.user_id = userId;
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('default_momo_phone')
+              .eq('user_id', userId)
+              .single();
+            
+            if (profile?.default_momo_phone) {
+              newState.userMomo = profile.default_momo_phone;
+              botResponse = `💳 **Generate QR Code**\n\nMoMo found: ${profile.default_momo_phone}\n\nChoose amount mode:\n1️⃣ With amount\n2️⃣ No amount (recipient chooses)`;
+              newState.step = 'qr_amount';
+            } else {
+              botResponse = "💳 **Generate QR Code**\n\n📱 Enter your MoMo number (format: 07XXXXXXXX):";
+              newState.step = 'qr_momo_setup';
+            }
+          } else {
+            botResponse = "❌ Failed to process your request. Please try again.";
+          }
         }
         else if (content === '2' || content.includes('nearby') || content.includes('driver')) {
           botResponse = "🚗 **Nearby Drivers**\n\nSearching for drivers near your location...";
@@ -269,6 +296,28 @@ async function processConversationFlow(message: WhatsAppMessage): Promise<void> 
         }
         else {
           botResponse = "🚗 **Welcome to MoveRwanda!**\n\nChoose an option:\n1️⃣ Generate QR Code\n2️⃣ Nearby Drivers\n3️⃣ Schedule Trip\n4️⃣ Add Vehicle\n5️⃣ Get Motor Insurance\n6️⃣ More\n\nReply with number (1-6) or option name.";
+        }
+        break;
+
+      case 'qr_momo_setup':
+        if (content.match(/^07\d{8}$/)) {
+          // Save MoMo number to user profile
+          const userId = newState.user_id || await findOrCreateUser(from);
+          if (userId) {
+            await supabase
+              .from('profiles')
+              .update({ default_momo_phone: content })
+              .eq('user_id', userId);
+            
+            newState.user_id = userId;
+            newState.userMomo = content;
+            botResponse = `✅ MoMo saved: ${content}\n\nChoose amount mode:\n1️⃣ With amount\n2️⃣ No amount (recipient chooses)`;
+            newState.step = 'qr_amount';
+          } else {
+            botResponse = "❌ Failed to save MoMo number. Please try again.";
+          }
+        } else {
+          botResponse = "❌ Invalid format. Please enter MoMo as: 07XXXXXXXX";
         }
         break;
 
