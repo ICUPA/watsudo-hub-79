@@ -49,15 +49,13 @@ export function InsuranceQuotes() {
       setLoading(true);
       const { data, error } = await supabase
         .from('insurance_quotes')
-        .select(`
-          *
-        `)
+        .select('*')
         .eq('status', selectedStatus)
         .order('created_at', { ascending: false });
       
       if (error) throw error;
       
-      // Transform data to match interface
+      // Transform data to match interface - working with current schema
       const transformedQuotes = data?.map(quote => {
         const quoteData = quote.quote_data as any || {};
         return {
@@ -68,19 +66,19 @@ export function InsuranceQuotes() {
           period_id: quoteData.period_id || '',
           addons: Array.isArray(quoteData.addons) ? quoteData.addons : [],
           pa_category_id: quoteData.pa_category_id || undefined,
-          status: quote.status as 'pending_backoffice' | 'quoted' | 'awaiting_payment' | 'cancelled' | 'paid' | 'issued',
+          status: quote.status as any,
           quote_pdf_path: quoteData.quote_pdf_path || undefined,
           amount_cents: quoteData.amount_cents || undefined,
           currency: 'RWF',
           created_at: quote.created_at,
           user: {
-            wa_id: '',
+            wa_id: quote.user_id.slice(0, 8),
             phone_e164: undefined,
-            display_name: undefined
+            display_name: `User ${quote.user_id.slice(0, 8)}`
           },
           vehicle: {
-            number_plate: 'Unknown',
-            usage_type: 'unknown'
+            number_plate: 'Vehicle',
+            usage_type: 'moto'
           }
         };
       }) || [];

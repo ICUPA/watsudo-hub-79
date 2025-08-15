@@ -421,10 +421,332 @@ Deno.serve(async (req) => {
         });
       }
       
-      // Handle all other interactive flows...
-      // (Implementation continues with QR, mobility, and insurance flows)
+      // Mobility flows
+      if (iid === "ND") {
+        await setState(session.id, STATES.ND_SELECT_TYPE, {});
+        const { data: types } = await sb.from("vehicle_types").select("*");
+        await waClient.sendList(to, "Choose vehicle type:", (types || []).map((t: any) => ({
+          id: `ND_V_${t.code}`, 
+          title: t.label
+        })), "Vehicle Types", "Nearby");
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (iid === "ST") {
+        await setState(session.id, STATES.ST_ROLE, {});
+        await waClient.sendButtons(to, "Schedule Trip: choose role", [
+          { id: "ST_ROLE_PAX", title: "Passenger" },
+          { id: "ST_ROLE_DRV", title: "Driver" },
+          { id: "MOBILITY", title: "⬅️ Back" }
+        ]);
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (iid === "AV") {
+        await setState(session.id, STATES.AV_USAGE, {});
+        const { data: vtypes } = await sb.from("vehicle_types").select("*");
+        await waClient.sendList(to, "Usage type:", (vtypes || []).map((t: any) => ({
+          id: `AV_U_${t.code}`, 
+          title: t.label
+        })), "Usage Types", "Add Vehicle");
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+
+      if (iid.startsWith("ND_V_")) {
+        const vt = iid.replace("ND_V_", "");
+        await setState(session.id, STATES.ND_WAIT_LOCATION, { nd: { vehicle_type: vt } });
+        await waClient.sendText(to, "Share your pickup location (Attach → Location).");
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (iid.startsWith("AV_U_")) {
+        const usage = iid.replace("AV_U_", "");
+        await setState(session.id, STATES.AV_DOC, { av: { usage_type: usage } });
+        await waClient.sendText(to, "Upload insurance certificate (photo or PDF).");
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+
+      // QR flows
+      if (iid === "QR_PHONE") {
+        await setState(session.id, STATES.QR_PHONE, { qr: { type: "phone" } });
+        if (!user.default_momo_phone) {
+          await waClient.sendText(to, "Enter MoMo phone (07xxxxxxxx or +2507…)");
+        } else {
+          await setState(session.id, STATES.QR_AMOUNT_MODE, { qr: { type: "phone", phone: user.default_momo_phone } });
+          await waClient.sendButtons(to, "Amount mode:", [
+            { id: "QR_AMT_WITH", title: "With amount" },
+            { id: "QR_AMT_NONE", title: "No amount" },
+            { id: "QR", title: "⬅️ Back" }
+          ]);
+        }
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (iid === "QR_CODE") {
+        await setState(session.id, STATES.QR_CODE, { qr: { type: "code" } });
+        if (!user.default_momo_code) {
+          await waClient.sendText(to, "Enter MoMo merchant code (4–9 digits):");
+        } else {
+          await setState(session.id, STATES.QR_AMOUNT_MODE, { qr: { type: "code", code: user.default_momo_code } });
+          await waClient.sendButtons(to, "Amount mode:", [
+            { id: "QR_AMT_WITH", title: "With amount" },
+            { id: "QR_AMT_NONE", title: "No amount" },
+            { id: "QR", title: "⬅️ Back" }
+          ]);
+        }
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (iid === "QR_AMT_WITH") {
+        await setState(session.id, STATES.QR_AMOUNT_INPUT, { qr: { ...(session.context as any).qr } });
+        await waClient.sendList(to, "Quick pick:", [
+          { id: "QR_A_1000", title: "1,000" },
+          { id: "QR_A_2000", title: "2,000" },
+          { id: "QR_A_5000", title: "5,000" },
+          { id: "QR_A_OTHER", title: "Other amount" }
+        ], "Amounts", "Pick amount");
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (iid === "QR_AMT_NONE") {
+        const ctx = session.context as any;
+        ctx.qr = { ...(ctx.qr || {}), amount: null };
+        await setState(session.id, STATES.QR_GENERATE, ctx);
+        await generateAndSendQR(to, session.user_id, ctx);
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (["QR_A_1000", "QR_A_2000", "QR_A_5000"].includes(iid)) {
+        const amt = iid === "QR_A_1000" ? 1000 : iid === "QR_A_2000" ? 2000 : 5000;
+        const ctx = session.context as any;
+        ctx.qr = { ...(ctx.qr || {}), amount: amt };
+        await setState(session.id, STATES.QR_GENERATE, ctx);
+        await generateAndSendQR(to, session.user_id, ctx);
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (iid === "QR_A_OTHER") {
+        await waClient.sendText(to, "Enter amount (>0):");
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (iid === "QR_AGAIN") {
+        await showQRMenu(to);
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (iid === "QR_CHANGE_DEFAULT") {
+        const ctx = session.context as any;
+        if (ctx.qr?.type === "phone") {
+          await setState(session.id, STATES.QR_PHONE, { qr: { type: "phone" } });
+          await waClient.sendText(to, "Enter new default MoMo phone:");
+        } else {
+          await setState(session.id, STATES.QR_CODE, { qr: { type: "code" } });
+          await waClient.sendText(to, "Enter new default MoMo code (4–9 digits):");
+        }
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+
+      // Insurance flows
+      if (session.state === STATES.INS_CHOOSE_START) {
+        if (iid === "START_TODAY") {
+          const ctx = { ...(session.context || {}), start_date: new Date().toISOString().slice(0, 10) };
+          await setState(session.id, STATES.INS_CHOOSE_PERIOD, ctx);
+          const { data: periods = [] } = await fetchPeriods();
+          await waClient.sendList(to, "Choose duration", periods.map((p: any) => ({
+            id: `PERIOD_${p.id}`, 
+            title: p.label, 
+            description: `${p.days} days`
+          })), "Period", "Available");
+          return new Response(JSON.stringify({ ok: true }), { 
+            status: 200, 
+            headers: { "Content-Type": "application/json" } 
+          });
+        }
+        if (iid === "START_PICK") {
+          await waClient.sendText(to, "Send date as YYYY-MM-DD:");
+          return new Response(JSON.stringify({ ok: true }), { 
+            status: 200, 
+            headers: { "Content-Type": "application/json" } 
+          });
+        }
+      }
+      
+      if (session.state === STATES.INS_CHOOSE_PERIOD && iid.startsWith("PERIOD_")) {
+        const ctx = { ...(session.context || {}), period_id: iid.replace("PERIOD_", "") };
+        await setState(session.id, STATES.INS_CHOOSE_ADDONS, ctx);
+        const { data: addons = [] } = await fetchAddons();
+        await waClient.sendList(to, "Pick add-ons (send 'Done' to continue)", addons.map((a: any) => ({
+          id: `ADDON_${a.id}`, 
+          title: a.label, 
+          description: a.code
+        })), "Add-ons", "Available");
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
     }
     
+    // Text input handling for various states
+    if (m?.text?.body) {
+      const t = m.text.body.trim();
+      
+      if (session.state === STATES.QR_PHONE) {
+        const phone = normalizePhone(t);
+        await sb.from("profiles").update({ default_momo_phone: phone }).eq("id", user.id);
+        await setState(session.id, STATES.QR_AMOUNT_MODE, { qr: { type: "phone", phone } });
+        await waClient.sendButtons(to, "Amount mode:", [
+          { id: "QR_AMT_WITH", title: "With amount" },
+          { id: "QR_AMT_NONE", title: "No amount" },
+          { id: "QR", title: "⬅️ Back" }
+        ]);
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (session.state === STATES.QR_CODE) {
+        if (!/^\d{4,9}$/.test(t)) {
+          await waClient.sendText(to, "Invalid code. Enter 4–9 digits:");
+          return new Response(JSON.stringify({ ok: true }), { 
+            status: 200, 
+            headers: { "Content-Type": "application/json" } 
+          });
+        }
+        await sb.from("profiles").update({ default_momo_code: t }).eq("id", user.id);
+        await setState(session.id, STATES.QR_AMOUNT_MODE, { qr: { type: "code", code: t } });
+        await waClient.sendButtons(to, "Amount mode:", [
+          { id: "QR_AMT_WITH", title: "With amount" },
+          { id: "QR_AMT_NONE", title: "No amount" },
+          { id: "QR", title: "⬅️ Back" }
+        ]);
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (session.state === STATES.QR_AMOUNT_INPUT) {
+        const amt = parseInt(t.replace(/[^\d]/g, ''), 10);
+        if (!amt || amt <= 0) {
+          await waClient.sendText(to, "Amount must be > 0. Enter again:");
+          return new Response(JSON.stringify({ ok: true }), { 
+            status: 200, 
+            headers: { "Content-Type": "application/json" } 
+          });
+        }
+        const ctx = (await sb.from("chat_sessions").select("context").eq("id", session.id).single()).data!.context as any;
+        ctx.qr = { ...(ctx.qr || {}), amount: amt };
+        await setState(session.id, STATES.QR_GENERATE, ctx);
+        await generateAndSendQR(to, session.user_id, ctx);
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (session.state === STATES.INS_COLLECT_DOCS) {
+        if (t.toLowerCase() === "agent") {
+          await waClient.sendText(to, "A human agent will join shortly. Please describe the issue.");
+          return new Response(JSON.stringify({ ok: true }), { 
+            status: 200, 
+            headers: { "Content-Type": "application/json" } 
+          });
+        }
+        if (t.toLowerCase() === "done") {
+          await setState(session.id, STATES.INS_CHOOSE_START, {});
+          await waClient.sendButtons(to, "Start date?", [
+            { id: "START_TODAY", title: "Today" },
+            { id: "START_PICK", title: "Pick date" }
+          ]);
+          return new Response(JSON.stringify({ ok: true }), { 
+            status: 200, 
+            headers: { "Content-Type": "application/json" } 
+          });
+        }
+      }
+      
+      if (session.state === STATES.INS_CHOOSE_START && /^\d{4}-\d{2}-\d{2}$/.test(t)) {
+        const ctx = { ...(session.context || {}), start_date: t };
+        await setState(session.id, STATES.INS_CHOOSE_PERIOD, ctx);
+        const { data: periods = [] } = await fetchPeriods();
+        await waClient.sendList(to, "Choose duration", periods.map((p: any) => ({
+          id: `PERIOD_${p.id}`, 
+          title: p.label, 
+          description: `${p.days} days`
+        })), "Period", "Available");
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+      
+      if (session.state === STATES.INS_CHOOSE_ADDONS && t.toLowerCase() === "done") {
+        const c = session.context as any;
+        const { data: ads = [] } = await fetchAddons();
+        const pa = ads.find((a: any) => a.code?.toLowerCase() === 'pa');
+        if (pa && c.addons?.includes(pa.id)) {
+          await setState(session.id, STATES.INS_CHOOSE_PA, c);
+          const { data: cats = [] } = await fetchPA();
+          await waClient.sendList(to, "Personal Accident category", cats.map((p: any) => ({
+            id: `PA_${p.id}`, 
+            title: p.label
+          })), "PA", "Categories");
+        } else {
+          await setState(session.id, STATES.INS_SUMMARY, c);
+          await waClient.sendButtons(to, "Summary → Continue?", [
+            { id: "SUM_CONTINUE", title: "Continue" },
+            { id: "CANCEL", title: "Cancel" }
+          ]);
+        }
+        return new Response(JSON.stringify({ ok: true }), { 
+          status: 200, 
+          headers: { "Content-Type": "application/json" } 
+        });
+      }
+    }
+
     // Handle non-interactive messages (location, media, text)
     if (m?.location && session.state === STATES.ND_WAIT_LOCATION) {
       const p = { lat: m.location.latitude, lng: m.location.longitude };

@@ -30,9 +30,6 @@ interface Vehicle {
   doc_url?: string;
   verified: boolean;
   created_at: string;
-  profiles?: {
-    wa_name?: string;
-  } | null;
 }
 
 export function VehicleManagement() {
@@ -66,7 +63,7 @@ export function VehicleManagement() {
     vehicle.plate?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     vehicle.make?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     vehicle.model?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    vehicle.profiles?.wa_name?.toLowerCase().includes(searchTerm.toLowerCase())
+    vehicle.user_id.includes(searchTerm.toLowerCase())
   );
 
   const handleVerify = async (vehicleId: string) => {
@@ -174,9 +171,10 @@ export function VehicleManagement() {
                         </div>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <p className="font-medium">Owner #{vehicle.user_id.slice(0, 8)}</p>
-                      </TableCell>
+                       <TableCell>
+                         <p className="font-medium">User {vehicle.user_id.slice(0, 8)}</p>
+                         <p className="text-xs text-muted-foreground">ID: {vehicle.user_id.slice(0, 8)}</p>
+                       </TableCell>
                       <TableCell>
                         <Badge variant={usageType.variant}>
                           {usageType.label}
