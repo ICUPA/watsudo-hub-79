@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import * as base64 from "https://deno.land/std@0.223.0/encoding/base64.ts";
-import { generateQR } from "https://deno.land/x/qr_code@2.0.0/mod.ts";
+import { encode } from "https://deno.land/x/qrcode@v2.0.0/mod.ts";
 
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -129,20 +129,14 @@ async function generateAndSendQR(to:string, userId:string, ctx:any){
   const ussd = buildUSSD(ctx);
   
   // Generate QR code as PNG bytes
-  const qrSvg = await generateQR(ussd, { 
+  const qrPng = await encode(ussd, { 
     errorCorrectionLevel: "H",
     margin: 2,
     width: 300
   });
   
-  // Convert SVG to PNG manually (simplified approach for demo)
-  const qrDataUrl = `data:image/svg+xml;base64,${base64.encode(new TextEncoder().encode(qrSvg))}`;
-  
   const path = `${userId}/${crypto.randomUUID()}.png`;
-  
-  // For now, we'll use a simple approach - store the SVG as text and convert later
-  const svgBytes = new TextEncoder().encode(qrSvg);
-  const { error } = await sb.storage.from("qr-codes").upload(path, svgBytes, { contentType:"image/svg+xml", upsert:true });
+  const { error } = await sb.storage.from("qr-codes").upload(path, qrPng, { contentType:"image/png", upsert:true });
   if(error) throw error;
   
   await sb.from("qr_generations").insert({ user_id:userId, profile_id: ctx.qr?.profile_id ?? null, amount: ctx.qr?.amount ?? null, ussd, file_path:path });
