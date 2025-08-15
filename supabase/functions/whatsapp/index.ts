@@ -126,25 +126,28 @@ async function ocrVehicleDoc(publicUrl:string){
   try { return JSON.parse(t); } catch { return {}; }
 }
 
-// Generate QR, save, send
+// Generate QR using existing edge function
 async function generateAndSendQR(to:string, userId:string, ctx:any){
   const ussd = buildUSSD(ctx);
   
-  // Use web service to generate QR code
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(ussd)}`;
-  const qrResponse = await fetch(qrUrl);
-  const qrBytes = new Uint8Array(await qrResponse.arrayBuffer());
+  // Use the working generate-qr edge function
+  const { data, error } = await sb.functions.invoke('generate-qr', {
+    body: {
+      type: ctx.qr?.type || 'phone',
+      identifier: ctx.qr?.phone || ctx.qr?.code,
+      amount: ctx.qr?.amount,
+      user_id: userId
+    }
+  });
   
-  const path = `${userId}/${crypto.randomUUID()}.png`;
-  const { error } = await sb.storage.from("qr-codes").upload(path, qrBytes, { contentType:"image/png", upsert:true });
-  if(error) throw error;
+  if (error) {
+    console.error('QR generation failed:', error);
+    await text(to, "Failed to generate QR code. Please try again.");
+    return;
+  }
   
-  await sb.from("qr_generations").insert({ user_id:userId, profile_id: ctx.qr?.profile_id ?? null, amount: ctx.qr?.amount ?? null, ussd, file_path:path });
-  
-  const publicUrl = `${SB_URL}/storage/v1/object/public/qr-codes/${path}`;
   const tel = buildTel(ussd);
-  
-  await image(to, publicUrl, `USSD: ${ussd}\nTap to dial: ${tel}`);
+  await image(to, data.qrCodeUrl, `USSD: ${ussd}\nTap to dial: ${tel}`);
   await btns(to,"QR generated. Next action?",[
     {id:"QR_AGAIN", title:"Generate another"},
     {id:"QR_CHANGE_DEFAULT", title:"Change default"},
