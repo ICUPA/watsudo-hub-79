@@ -442,6 +442,36 @@ export type Database = {
           },
         ]
       }
+      qr_profiles: {
+        Row: {
+          code: string | null
+          created_at: string | null
+          id: string
+          identifier_type: string
+          is_default: boolean | null
+          phone: string | null
+          user_id: string
+        }
+        Insert: {
+          code?: string | null
+          created_at?: string | null
+          id?: string
+          identifier_type: string
+          is_default?: boolean | null
+          phone?: string | null
+          user_id: string
+        }
+        Update: {
+          code?: string | null
+          created_at?: string | null
+          id?: string
+          identifier_type?: string
+          is_default?: boolean | null
+          phone?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       ride_events: {
         Row: {
           created_at: string | null
@@ -1258,7 +1288,9 @@ export type Database = {
         Returns: boolean
       }
       nearby_drivers: {
-        Args: { km?: number; lat: number; lng: number }
+        Args:
+          | { km?: number; lat: number; lng: number }
+          | { lat: number; lng: number; radius_km?: number }
         Returns: {
           distance_km: number
           driver_id: string
