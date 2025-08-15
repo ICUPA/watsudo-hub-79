@@ -7,9 +7,9 @@ export const sb = createClient(SB_URL, SB_SERVICE);
 
 const GRAPH_VER = "v21.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_VER}`;
-const PHONE_ID = Deno.env.get("META_PHONE_NUMBER_ID") || Deno.env.get("WHATSAPP_PHONE_NUMBER_ID")!;
-const ACCESS_TOKEN = Deno.env.get("META_ACCESS_TOKEN") || Deno.env.get("WHATSAPP_ACCESS_TOKEN")!;
-const APP_SECRET = Deno.env.get("META_APP_SECRET") || Deno.env.get("WHATSAPP_APP_SECRET")!;
+const PHONE_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID")!;
+const ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN")!;
+const APP_SECRET = Deno.env.get("WHATSAPP_APP_SECRET")!;
 
 export async function sendRaw(payload: unknown) {
   const url = `${GRAPH}/${PHONE_ID}/messages`;
