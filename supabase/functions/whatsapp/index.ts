@@ -1,710 +1,510 @@
-// WhatsApp Business API webhook function with full flow implementation
+// deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import * as base64 from "https://deno.land/std@0.223.0/encoding/base64.ts";
-import { toDataURL } from "https://deno.land/x/qrcode@v2.0.0/mod.ts";
+import QRCode from "https://deno.land/x/qrcode@v2.0.0/mod.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+const SB_URL = Deno.env.get("SUPABASE_URL")!;
+const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
+const WABA_PHONE_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID")!;
+const WABA_VERIFY = Deno.env.get("WHATSAPP_VERIFY_TOKEN")!;
+const WABA_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN")!;
+const WABA_APP_SECRET = Deno.env.get("WHATSAPP_APP_SECRET")!;
+const GRAPH = "https://graph.facebook.com/v20.0";
+const sb = createClient(SB_URL, SB_SERVICE);
 
-// Environment variables
-const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN") || "bd0e7b6f4a2c9d83f1e57a0c6b3d48e9";
-const ACCESS_TOKEN = Deno.env.get("WHATSAPP_ACCESS_TOKEN") || "EAAGHrMn6uugBO9xlSTNU1FsbnZB7AnBLCvTlgZCYQDZC8OZA7q3nrtxpxn3VgHiT8o9KbKQIyoPNrESHKZCq2c9B9lvNr2OsT8YDBewaDD1OzytQd74XlmSOgxZAVL6TEQpDT43zZCZBwQg9AZA5QPeksUVzmAqTaoNyIIaaqSvJniVmn6dW1rw88dbZAyR6VZBMTTpjQZDZD";
-const PHONE_ID = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
-const SB_URL = Deno.env.get("SUPABASE_URL");
-const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-
-const sb = SB_URL && SB_SERVICE ? createClient(SB_URL, SB_SERVICE) : null;
-
-// Conversation states
-const STATES = {
-  MAIN_MENU: 'main_menu',
-  // QR Flow
-  QR_ENTRY: 'qr_entry',
-  QR_ENTER_PHONE: 'qr_enter_phone',
-  QR_ENTER_CODE: 'qr_enter_code',
-  QR_AMOUNT_MODE: 'qr_amount_mode',
-  QR_ENTER_AMOUNT: 'qr_enter_amount',
-  // Mobility Flow
-  MOBILITY_MENU: 'mobility_menu',
-  ND_VEHICLE_TYPE: 'nd_vehicle_type',
-  ND_LOCATION: 'nd_location',
-  ND_DRIVER_LIST: 'nd_driver_list',
-  ST_ROLE: 'st_role',
-  ST_VEHICLE_TYPE: 'st_vehicle_type',
-  ST_PICKUP: 'st_pickup',
-  ST_DROPOFF: 'st_dropoff',
-  ST_DATETIME: 'st_datetime',
-  AV_USAGE_TYPE: 'av_usage_type',
-  AV_UPLOAD_DOC: 'av_upload_doc',
-  // Insurance Flow
-  INS_MENU: 'ins_menu',
-  INS_CHECK_VEHICLE: 'ins_check_vehicle',
-  INS_UPLOAD_DOCS: 'ins_upload_docs',
-  INS_START_DATE: 'ins_start_date',
-  INS_PERIOD: 'ins_period',
-  INS_ADDONS: 'ins_addons',
-  INS_SUMMARY: 'ins_summary'
-};
-
-// WhatsApp API helpers
-async function sendMessage(to: string, text: string) {
-  const response = await fetch(`https://graph.facebook.com/v21.0/${PHONE_ID}/messages`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: to,
-      type: "text", 
-      text: { body: text }
-    })
+// UI helpers
+const btns = (to:string, body:string, items:{id:string;title:string}[]) =>
+  fetch(`${GRAPH}/${WABA_PHONE_ID}/messages`, {
+    method:"POST", headers:{Authorization:`Bearer ${WABA_TOKEN}`,"Content-Type":"application/json"},
+    body: JSON.stringify({ messaging_product:"whatsapp", to, type:"interactive",
+      interactive:{ type:"button", body:{text:body}, action:{ buttons:items.map(b=>({type:"reply",reply:b})) } }})
   });
-  return await response.json();
-}
-
-async function sendButtons(to: string, text: string, buttons: {id: string, title: string}[]) {
-  const response = await fetch(`https://graph.facebook.com/v21.0/${PHONE_ID}/messages`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: to,
-      type: "interactive",
-      interactive: {
-        type: "button",
-        body: { text: text },
-        action: { buttons: buttons.map(b => ({ type: "reply", reply: b })) }
-      }
-    })
+const list = (to:string, body:string, rows:{id:string;title:string;description?:string}[], title="Select", sectionTitle="Options") =>
+  fetch(`${GRAPH}/${WABA_PHONE_ID}/messages`, {
+    method:"POST", headers:{Authorization:`Bearer ${WABA_TOKEN}`,"Content-Type":"application/json"},
+    body: JSON.stringify({ messaging_product:"whatsapp", to, type:"interactive",
+      interactive:{ type:"list", header:{type:"text",text:title}, body:{text:body}, action:{button:"Choose",sections:[{title:sectionTitle,rows}]}}})
   });
-  return await response.json();
-}
-
-async function sendList(to: string, text: string, buttonText: string, sections: any[]) {
-  const response = await fetch(`https://graph.facebook.com/v21.0/${PHONE_ID}/messages`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: to,
-      type: "interactive",
-      interactive: {
-        type: "list",
-        body: { text: text },
-        action: {
-          button: buttonText,
-          sections: sections
-        }
-      }
-    })
+const text = (to:string, body:string) =>
+  fetch(`${GRAPH}/${WABA_PHONE_ID}/messages`, {
+    method:"POST", headers:{Authorization:`Bearer ${WABA_TOKEN}`,"Content-Type":"application/json"},
+    body: JSON.stringify({ messaging_product:"whatsapp", to, type:"text", text:{body} })
   });
-  return await response.json();
-}
-
-async function sendImage(to: string, imageUrl: string, caption?: string) {
-  const response = await fetch(`https://graph.facebook.com/v21.0/${PHONE_ID}/messages`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: to,
-      type: "image",
-      image: {
-        link: imageUrl,
-        caption: caption
-      }
-    })
+const image = (to:string, link:string, caption?:string) =>
+  fetch(`${GRAPH}/${WABA_PHONE_ID}/messages`, {
+    method:"POST", headers:{Authorization:`Bearer ${WABA_TOKEN}`,"Content-Type":"application/json"},
+    body: JSON.stringify({ messaging_product:"whatsapp", to, type:"image", image:{link, caption} })
   });
-  return await response.json();
-}
 
-// User and session management
-async function getOrCreateUser(phone: string, name?: string) {
-  if (!sb) throw new Error("Supabase not initialized");
-  
-  // Clean phone number
-  const cleanPhone = phone.startsWith('+') ? phone : `+${phone}`;
-  
-  // Find or create user profile
-  let { data: profile } = await sb
-    .from('profiles')
-    .select('*')
-    .eq('wa_phone', cleanPhone)
-    .single();
-    
-  if (!profile) {
-    const { data: newProfile } = await sb
-      .from('profiles')
-      .insert({
-        wa_phone: cleanPhone,
-        wa_name: name || 'User'
-      })
-      .select()
-      .single();
-    profile = newProfile;
-  }
-  
-  return profile;
-}
+// States / IDs  
+const MAIN = ["MOBILITY","INSURANCE","QR","PROFILE","HOME"] as const;
+const MOBILITY = ["ND","ST","AV","HOME"] as const;
+const QR_IDS = ["QR_PHONE","QR_CODE","QR_AMT_WITH","QR_AMT_NONE","QR_A_1000","QR_A_2000","QR_A_5000","QR_A_OTHER","QR_AGAIN","QR_CHANGE_DEFAULT","HOME"] as const;
 
-async function getOrCreateSession(userId: string, phone: string) {
-  if (!sb) throw new Error("Supabase not initialized");
-  
-  let { data: session } = await sb
-    .from('chat_sessions')
-    .select('*')
-    .eq('user_id', userId)
-    .single();
-    
-  if (!session) {
-    const { data: newSession } = await sb
-      .from('chat_sessions')
-      .insert({
-        user_id: userId,
-        state: STATES.MAIN_MENU,
-        context: {}
-      })
-      .select()
-      .single();
-    session = newSession;
-  }
-  
-  return session;
-}
+const INS_STATES = {
+  MENU: "INS_MENU",
+  CHECK: "INS_CHECK_VEHICLE", 
+  COLLECT: "INS_COLLECT_DOCS",
+  START: "INS_CHOOSE_START",
+  PERIOD: "INS_CHOOSE_PERIOD",
+  ADDONS: "INS_CHOOSE_ADDONS",
+  PA: "INS_CHOOSE_PA",
+  SUMMARY: "INS_SUMMARY",
+  QUEUED: "INS_QUEUED",
+  DECIDE: "INS_DECIDE",
+  PLAN: "INS_PAYMENT_PLAN",
+  AWAIT: "INS_AWAIT_PAYMENT",
+  ISSUED: "INS_ISSUED",
+} as const;
 
-async function updateSession(sessionId: string, state: string, context: any) {
-  if (!sb) return;
-  await sb
-    .from('chat_sessions')
-    .update({ state, context, updated_at: new Date().toISOString() })
-    .eq('id', sessionId);
+// Util
+const ok = (b:unknown)=> new Response(JSON.stringify(b),{status:200,headers:{"content-type":"application/json"}});
+const bad = (m:string,s=400)=> new Response(m,{status:s});
+function getInteractiveId(m:any){
+  if(m?.type!=="interactive") return undefined;
+  const i=m.interactive; if(i?.type==="button_reply") return i.button_reply?.id; if(i?.type==="list_reply") return i.list_reply?.id;
 }
-
-// QR Code generation
-async function generateQRCode(phone: string, amount?: number) {
-  // Clean phone number for USSD (local format)
-  const localPhone = phone.startsWith('+250') ? `0${phone.slice(4)}` : phone.replace('+', '');
-  
-  // Build USSD string
-  const ussd = amount 
-    ? `*182*1*1*${localPhone}*${amount}#`
-    : `*182*1*1*${localPhone}#`;
-    
-  // Generate QR code
-  const qrDataUrl = await toDataURL(ussd, { 
-    errorCorrectionLevel: 'H',
-    margin: 2,
-    scale: 8 
-  });
-  
-  // Convert to bytes for storage
-  const qrBytes = base64.decode(qrDataUrl.split(',')[1]);
-  
-  if (!sb) throw new Error("Supabase not initialized");
-  
-  // Store in qr-codes bucket
-  const fileName = `qr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.png`;
-  const { data: uploadData, error } = await sb.storage
-    .from('qr-codes')
-    .upload(fileName, qrBytes, {
-      contentType: 'image/png',
-      upsert: true
-    });
-    
-  if (error) throw error;
-  
-  // Get public URL
-  const { data: urlData } = sb.storage
-    .from('qr-codes')
-    .getPublicUrl(fileName);
-    
-  return {
-    imageUrl: urlData.publicUrl,
-    ussd,
-    telLink: `tel:${ussd.replace(/#/g, '%23')}`
-  };
+function normalizePhone(p:string){
+  const d=p.replace(/[^\d+]/g,"");
+  if(d.startsWith("+")) return d;
+  if(d.startsWith("07")) return `+250${d.slice(1)}`;
+  if(d.startsWith("2507")) return `+${d}`;
+  return d;
 }
-
-// Vehicle OCR processing
-async function processVehicleDocument(mediaId: string) {
-  if (!OPENAI_API_KEY) throw new Error("OpenAI API key not configured");
-  
-  // Download media from WhatsApp
-  const mediaResponse = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
-    headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` }
-  });
-  const mediaData = await mediaResponse.json();
-  
-  const fileResponse = await fetch(mediaData.url, {
-    headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` }
-  });
-  const fileBytes = await fileResponse.arrayBuffer();
-  
-  // Upload to documents bucket
-  if (!sb) throw new Error("Supabase not initialized");
-  
-  const fileName = `vehicle_doc_${Date.now()}.${mediaData.mime_type?.includes('pdf') ? 'pdf' : 'jpg'}`;
-  await sb.storage
-    .from('documents')
-    .upload(fileName, fileBytes, {
-      contentType: mediaData.mime_type,
-      upsert: true
-    });
-    
-  // Get signed URL for OCR
-  const { data: signedUrl } = await sb.storage
-    .from('documents')
-    .createSignedUrl(fileName, 300);
-    
-  // OCR with OpenAI
-  const ocrResponse = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o',
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: 'Extract vehicle information from this document. Return ONLY a JSON object with: plate, vin, make, model, model_year, insurance_provider, insurance_policy, insurance_expiry (YYYY-MM-DD format).'
-          },
-          {
-            type: 'image_url',
-            image_url: { url: signedUrl!.signedUrl }
-          }
-        ]
-      }],
-      max_tokens: 500
-    })
-  });
-  
-  const ocrResult = await ocrResponse.json();
-  const extractedText = ocrResult.choices?.[0]?.message?.content || '{}';
-  
-  try {
-    return JSON.parse(extractedText);
-  } catch {
-    return {};
+function buildTel(ussd:string){ return `tel:${encodeURIComponent(ussd).replace(/%2A/g,"*")}`; }
+function buildUSSD(ctx:any){
+  const t = ctx.qr?.type, phone = ctx.qr?.phone, code = ctx.qr?.code, amt = ctx.qr?.amount;
+  if(t==="phone"){
+    const local = phone.startsWith("+250")? `0${phone.slice(4)}` : phone.replace(/^\+/,'');
+    return amt? `*182*1*1*${local}*${amt}#` : `*182*1*1*${local}#`;
+  } else {
+    return amt? `*182*8*1*${code}*${amt}#` : `*182*8*1*${code}#`;
   }
 }
 
-// Main menu
-async function showMainMenu(to: string) {
-  await sendButtons(to, "Welcome to Mobility Hub! Choose a service:", [
-    { id: "MOBILITY", title: "🚕 Mobility" },
-    { id: "INSURANCE", title: "🛡️ Insurance" },
-    { id: "QR", title: "🔳 QR Codes" }
+// WA media fetch
+async function fetchMedia(mediaId:string){
+  const metaRes = await fetch(`${GRAPH}/${mediaId}`, { headers:{Authorization:`Bearer ${WABA_TOKEN}`}});
+  const meta = await metaRes.json();
+  const fileRes = await fetch(meta.url, { headers:{Authorization:`Bearer ${WABA_TOKEN}`}});
+  return { bytes: new Uint8Array(await fileRes.arrayBuffer()), mime: meta.mime_type ?? "application/octet-stream" };
+}
+
+// User/session
+async function getOrCreateUser(wa_phone:string, wa_name?:string){
+  let { data: profiles } = await sb.from("profiles").select("*").eq("wa_phone",wa_phone).limit(1);
+  if(!profiles?.length){
+    const { data } = await sb.from("profiles").insert({wa_phone,wa_name}).select("*").single();
+    profiles = [data];
+  }
+  const user = profiles[0];
+  let { data: sessions } = await sb.from("chat_sessions").select("*").eq("user_id",user.id).limit(1);
+  if(!sessions?.length){
+    const { data: s2 } = await sb.from("chat_sessions").insert({user_id:user.id}).select("*").single();
+    sessions = [s2];
+  }
+  return { user, session: sessions[0] as any };
+}
+async function setState(sessionId:string, state:string, context:Record<string,unknown>={}) {
+  await sb.from("chat_sessions").update({ state, context }).eq("id",sessionId);
+}
+
+// OCR (Insurance certificate)
+async function ocrVehicleDoc(publicUrl:string){
+  const prompt = `Extract JSON from the insurance certificate image/PDF with keys:
+  plate, vin, make, model, model_year, insurance_provider, insurance_policy, insurance_expiry (YYYY-MM-DD or null). Return ONLY JSON.`;
+  const res = await fetch("https://api.openai.com/v1/chat/completions",{
+    method:"POST", headers:{"Authorization":`Bearer ${OPENAI_API_KEY}`,"Content-Type":"application/json"},
+    body: JSON.stringify({ model:"gpt-4o", temperature:0,
+      messages:[{role:"user",content:[{type:"text",text:prompt},{type:"image_url",image_url:{url:publicUrl}}]}] })
+  }).catch(()=>null);
+  const j = await res?.json().catch(()=>null);
+  const t = j?.choices?.[0]?.message?.content || "{}";
+  try { return JSON.parse(t); } catch { return {}; }
+}
+
+// Generate QR, save, send
+async function generateAndSendQR(to:string, userId:string, ctx:any){
+  const ussd = buildUSSD(ctx);
+  const dataUrl = await QRCode.toDataURL(ussd,{ errorCorrectionLevel:"H", margin:2, scale:8 });
+  const bytes = base64.decode(dataUrl.split(",")[1]);
+  const path = `qr/${userId}/${crypto.randomUUID()}.png`;
+  const { error } = await sb.storage.from("qr-codes").upload(path, bytes, { contentType:"image/png", upsert:true });
+  if(error) throw error;
+  await sb.from("qr_generations").insert({ user_id:userId, profile_id: ctx.qr?.profile_id ?? null, amount: ctx.qr?.amount ?? null, ussd, file_path:path });
+  const pub = `${SB_URL.replace('.co','.co/storage/v1/object/public')}/qr-codes/${path.split('qr/')[1]}`;
+  const tel = buildTel(ussd);
+  await image(to, pub, `USSD: ${ussd}\nTap to dial: ${tel}`);
+  await btns(to,"QR generated. Next action?",[
+    {id:"QR_AGAIN", title:"Generate another"},
+    {id:"QR_CHANGE_DEFAULT", title:"Change default"},
+    {id:"HOME", title:"⬅️ Home"}
   ]);
 }
 
-// Flow handlers
-async function handleQRFlow(to: string, session: any, message: any, interactiveId?: string) {
-  const context = session.context || {};
-  
-  switch (session.state) {
-    case STATES.QR_ENTRY:
-      // Check if user has MoMo info on file
-      const profile = await sb!.from('profiles').select('*').eq('id', session.user_id).single();
-      if (profile.data?.default_momo_phone) {
-        await sendButtons(to, "Choose amount mode:", [
-          { id: "QR_WITH_AMOUNT", title: "📊 With Amount" },
-          { id: "QR_NO_AMOUNT", title: "💳 No Amount" },
-          { id: "QR_CHANGE_PHONE", title: "📱 Change Phone" }
-        ]);
-        await updateSession(session.id, STATES.QR_AMOUNT_MODE, { phone: profile.data.default_momo_phone });
-      } else {
-        await sendMessage(to, "📱 Please send your MoMo phone number (format: 0788123456):");
-        await updateSession(session.id, STATES.QR_ENTER_PHONE, {});
-      }
-      break;
-      
-    case STATES.QR_ENTER_PHONE:
-      if (message.type === 'text') {
-        const phone = message.text.body.trim();
-        if (/^(\+250|0)[7]\d{8}$/.test(phone)) {
-          // Save phone to profile
-          await sb!.from('profiles').update({ default_momo_phone: phone }).eq('id', session.user_id);
-          await sendButtons(to, "Choose amount mode:", [
-            { id: "QR_WITH_AMOUNT", title: "📊 With Amount" },
-            { id: "QR_NO_AMOUNT", title: "💳 No Amount" }
-          ]);
-          await updateSession(session.id, STATES.QR_AMOUNT_MODE, { phone });
-        } else {
-          await sendMessage(to, "❌ Invalid phone format. Please use: 0788123456 or +250788123456");
-        }
-      }
-      break;
-      
-    case STATES.QR_AMOUNT_MODE:
-      if (interactiveId === "QR_WITH_AMOUNT") {
-        await sendList(to, "Select amount or choose custom:", "Select Amount", [{
-          title: "Quick Amounts",
-          rows: [
-            { id: "QR_1000", title: "1,000 RWF" },
-            { id: "QR_2000", title: "2,000 RWF" },
-            { id: "QR_5000", title: "5,000 RWF" },
-            { id: "QR_CUSTOM", title: "💰 Custom Amount" }
-          ]
-        }]);
-        await updateSession(session.id, STATES.QR_ENTER_AMOUNT, context);
-      } else if (interactiveId === "QR_NO_AMOUNT") {
-        const qr = await generateQRCode(context.phone);
-        await sendImage(to, qr.imageUrl, `🔳 QR Code generated!\n\nUSSD: ${qr.ussd}\nTap to dial: ${qr.telLink}`);
-        await sendButtons(to, "What's next?", [
-          { id: "QR_ANOTHER", title: "🔄 Generate Another" },
-          { id: "HOME", title: "🏠 Main Menu" }
-        ]);
-        await updateSession(session.id, STATES.MAIN_MENU, {});
-      }
-      break;
-      
-    case STATES.QR_ENTER_AMOUNT:
-      if (interactiveId?.startsWith("QR_")) {
-        const amount = interactiveId === "QR_1000" ? 1000 : 
-                     interactiveId === "QR_2000" ? 2000 : 
-                     interactiveId === "QR_5000" ? 5000 : null;
-        
-        if (amount || interactiveId === "QR_CUSTOM") {
-          if (interactiveId === "QR_CUSTOM") {
-            await sendMessage(to, "💰 Enter the amount (numbers only):");
-            return;
-          }
-          
-          const qr = await generateQRCode(context.phone, amount);
-          await sendImage(to, qr.imageUrl, `🔳 QR Code generated!\n\nAmount: ${amount} RWF\nUSSD: ${qr.ussd}\nTap to dial: ${qr.telLink}`);
-          await sendButtons(to, "What's next?", [
-            { id: "QR_ANOTHER", title: "🔄 Generate Another" },
-            { id: "HOME", title: "🏠 Main Menu" }
-          ]);
-          await updateSession(session.id, STATES.MAIN_MENU, {});
-        }
-      } else if (message.type === 'text') {
-        const amount = parseInt(message.text.body.trim());
-        if (!isNaN(amount) && amount > 0) {
-          const qr = await generateQRCode(context.phone, amount);
-          await sendImage(to, qr.imageUrl, `🔳 QR Code generated!\n\nAmount: ${amount} RWF\nUSSD: ${qr.ussd}\nTap to dial: ${qr.telLink}`);
-          await sendButtons(to, "What's next?", [
-            { id: "QR_ANOTHER", title: "🔄 Generate Another" },
-            { id: "HOME", title: "🏠 Main Menu" }
-          ]);
-          await updateSession(session.id, STATES.MAIN_MENU, {});
-        } else {
-          await sendMessage(to, "❌ Please enter a valid amount (numbers only):");
-        }
-      }
-      break;
-  }
-  
-  // Handle common QR actions
-  if (interactiveId === "QR_ANOTHER") {
-    await updateSession(session.id, STATES.QR_ENTRY, {});
-    await handleQRFlow(to, { ...session, state: STATES.QR_ENTRY }, message);
-  }
+// Menus
+async function showMainMenu(to:string){
+  await btns(to, "Welcome. Choose a service:", [
+    {id:"MOBILITY", title:"🚕 Mobility"},
+    {id:"INSURANCE", title:"🛡️ Insurance (Moto)"},
+    {id:"QR", title:"🔳 QR Codes"},
+    {id:"PROFILE", title:"👤 My Profile"}
+  ]);
+}
+async function showMobilityMenu(to:string){
+  await btns(to, "Mobility menu:", [
+    {id:"ND", title:"Nearby Drivers"},
+    {id:"ST", title:"Schedule Trip"},
+    {id:"AV", title:"Add Vehicle (OCR)"},
+    {id:"HOME", title:"⬅️ Home"}
+  ]);
+}
+async function showQRMenu(to:string){
+  await btns(to, "QR: Choose identifier type:", [
+    {id:"QR_PHONE", title:"Use Phone"},
+    {id:"QR_CODE", title:"Use MoMo Code"},
+    {id:"HOME", title:"⬅️ Home"}
+  ]);
 }
 
-async function handleMobilityFlow(to: string, session: any, message: any, interactiveId?: string) {
-  const context = session.context || {};
-  
-  switch (session.state) {
-    case STATES.MOBILITY_MENU:
-      if (interactiveId === "NEARBY_DRIVERS") {
-        // Get vehicle types from database
-        const { data: vehicleTypes } = await sb!.from('vehicle_types').select('*');
-        if (vehicleTypes?.length) {
-          await sendList(to, "Select vehicle type:", "Choose Type", [{
-            title: "Vehicle Types",
-            rows: vehicleTypes.map(vt => ({
-              id: `VT_${vt.id}`,
-              title: vt.label,
-              description: vt.code
-            }))
-          }]);
-          await updateSession(session.id, STATES.ND_VEHICLE_TYPE, {});
-        } else {
-          await sendMessage(to, "📍 Please share your location to find nearby drivers:");
-          await updateSession(session.id, STATES.ND_LOCATION, {});
-        }
-      } else if (interactiveId === "SCHEDULE_TRIP") {
-        await sendButtons(to, "Choose your role:", [
-          { id: "ST_PASSENGER", title: "👤 Passenger" },
-          { id: "ST_DRIVER", title: "🚗 Driver" }
-        ]);
-        await updateSession(session.id, STATES.ST_ROLE, {});
-      } else if (interactiveId === "ADD_VEHICLE") {
-        const { data: vehicleTypes } = await sb!.from('vehicle_types').select('*');
-        if (vehicleTypes?.length) {
-          await sendList(to, "Select vehicle usage type:", "Choose Usage", [{
-            title: "Usage Types",
-            rows: vehicleTypes.map(vt => ({
-              id: `USAGE_${vt.id}`,
-              title: vt.label,
-              description: vt.code
-            }))
-          }]);
-          await updateSession(session.id, STATES.AV_USAGE_TYPE, {});
-        }
-      }
-      break;
-      
-    case STATES.ND_VEHICLE_TYPE:
-      if (interactiveId?.startsWith("VT_")) {
-        const vehicleTypeId = interactiveId.replace("VT_", "");
-        await sendMessage(to, "📍 Please share your location to find nearby drivers:");
-        await updateSession(session.id, STATES.ND_LOCATION, { vehicleTypeId });
-      }
-      break;
-      
-    case STATES.ND_LOCATION:
-      if (message.type === 'location') {
-        const lat = message.location.latitude;
-        const lng = message.location.longitude;
-        
-        // Query nearby drivers
-        const { data: drivers } = await sb!.rpc('nearby_drivers', { lat, lng, km: 15 });
-        
-        if (drivers?.length) {
-          await sendList(to, `Found ${drivers.length} nearby drivers:`, "Select Driver", [{
-            title: "Available Drivers",
-            rows: drivers.slice(0, 10).map((driver: any, index: number) => ({
-              id: `DRIVER_${driver.driver_id}`,
-              title: `#${index + 1} ${driver.wa_name || 'Driver'}`,
-              description: `${driver.distance_km}km • ${driver.vehicle_type || 'Vehicle'} • ⭐${driver.rating || '5.0'}`
-            }))
-          }]);
-          await updateSession(session.id, STATES.ND_DRIVER_LIST, { lat, lng, drivers });
-        } else {
-          await sendMessage(to, "❌ No drivers found nearby. Try again later or expand search area.");
-          await showMainMenu(to);
-          await updateSession(session.id, STATES.MAIN_MENU, {});
-        }
-      }
-      break;
-      
-    case STATES.AV_USAGE_TYPE:
-      if (interactiveId?.startsWith("USAGE_")) {
-        const usageTypeId = interactiveId.replace("USAGE_", "");
-        await sendMessage(to, "📄 Please upload your vehicle's insurance certificate or registration document (photo or PDF):");
-        await updateSession(session.id, STATES.AV_UPLOAD_DOC, { usageTypeId });
-      }
-      break;
-      
-    case STATES.AV_UPLOAD_DOC:
-      if (message.type === 'document' || message.type === 'image') {
-        const mediaId = message.document?.id || message.image?.id;
-        if (mediaId) {
-          await sendMessage(to, "🔄 Processing document...");
-          try {
-            const extracted = await processVehicleDocument(mediaId);
-            
-            // Save vehicle to database
-            const { error } = await sb!.from('vehicles').insert({
-              user_id: session.user_id,
-              usage_type: context.usageTypeId,
-              plate: extracted.plate,
-              vin: extracted.vin,
-              make: extracted.make,
-              model: extracted.model,
-              model_year: extracted.model_year,
-              insurance_provider: extracted.insurance_provider,
-              insurance_policy: extracted.insurance_policy,
-              insurance_expiry: extracted.insurance_expiry,
-              extra: extracted
-            });
-            
-            if (!error) {
-              await sendMessage(to, `✅ Vehicle registered successfully!\n\nPlate: ${extracted.plate || 'Not detected'}\nMake/Model: ${extracted.make || ''} ${extracted.model || ''}\nYear: ${extracted.model_year || 'Not detected'}`);
-            } else {
-              await sendMessage(to, "❌ Error saving vehicle. Please try again.");
-            }
-          } catch (error) {
-            await sendMessage(to, "❌ Error processing document. Please try again with a clearer image.");
-          }
-          
-          await showMainMenu(to);
-          await updateSession(session.id, STATES.MAIN_MENU, {});
-        }
-      }
-      break;
-  }
-}
+// Insurance helpers
+const fetchPeriods = () => sb.from("insurance_periods").select("*").eq("is_active",true);
+const fetchAddons = () => sb.from("addons").select("*").eq("is_active",true);
+const fetchPA = () => sb.from("pa_categories").select("*").eq("is_active",true);
 
-// Process incoming messages with state management
-async function processMessage(from: string, message: any, interactiveId?: string, contactName?: string) {
-  console.log(`Processing message from ${from}, type: ${message.type}, interactive: ${interactiveId}`);
-  
-  try {
-    // Get or create user and session
-    const user = await getOrCreateUser(from, contactName);
-    const session = await getOrCreateSession(user.id, from);
-    
-    // Handle global navigation
-    if (interactiveId === "HOME") {
-      await showMainMenu(from);
-      await updateSession(session.id, STATES.MAIN_MENU, {});
-      return;
-    }
-    
-    // Handle main menu
-    if (session.state === STATES.MAIN_MENU || interactiveId === "MOBILITY" || interactiveId === "INSURANCE" || interactiveId === "QR") {
-      if (interactiveId === "MOBILITY") {
-        await sendButtons(from, "🚕 Mobility services:", [
-          { id: "NEARBY_DRIVERS", title: "🚗 Nearby Drivers" },
-          { id: "SCHEDULE_TRIP", title: "📅 Schedule Trip" },
-          { id: "ADD_VEHICLE", title: "🚙 Add Vehicle" },
-          { id: "HOME", title: "🏠 Main Menu" }
-        ]);
-        await updateSession(session.id, STATES.MOBILITY_MENU, {});
-        return;
-      }
-      
-      if (interactiveId === "QR") {
-        await updateSession(session.id, STATES.QR_ENTRY, {});
-        await handleQRFlow(from, { ...session, state: STATES.QR_ENTRY }, message);
-        return;
-      }
-      
-      if (interactiveId === "INSURANCE") {
-        await sendMessage(from, "🛡️ Insurance services coming soon! This will include motor insurance quotes, certificates, and claims support.");
-        await showMainMenu(from);
-        return;
-      }
-      
-      // Show main menu for greetings or unknown messages
-      if (message.type === 'text') {
-        const text = message.text?.body?.toLowerCase() || "";
-        if (text.includes("hi") || text.includes("hello") || text.includes("start") || text.includes("menu")) {
-          await showMainMenu(from);
-          return;
-        }
-      }
-      
-      await showMainMenu(from);
-      return;
-    }
-    
-    // Route to specific flows based on current state
-    if (session.state.startsWith('qr_') || session.state === STATES.QR_ENTRY) {
-      await handleQRFlow(from, session, message, interactiveId);
-    } else if (session.state.startsWith('mobility_') || session.state.startsWith('nd_') || session.state.startsWith('st_') || session.state.startsWith('av_') || session.state === STATES.MOBILITY_MENU) {
-      await handleMobilityFlow(from, session, message, interactiveId);
-    } else {
-      // Default: show main menu
-      await showMainMenu(from);
-      await updateSession(session.id, STATES.MAIN_MENU, {});
-    }
-    
-  } catch (error) {
-    console.error("Error in processMessage:", error);
-    await sendMessage(from, "❌ Sorry, something went wrong. Please try again.");
-    await showMainMenu(from);
-  }
-}
-
-// Main function
+// Entry
 Deno.serve(async (req) => {
-  try {
-    console.log(`📥 ${req.method} ${req.url}`);
-
-    // Handle CORS
-    if (req.method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
-    }
-
-    const url = new URL(req.url);
-
-    // Debug endpoint
-    if (url.pathname.endsWith('/debug')) {
-      return new Response(JSON.stringify({
-        status: "WhatsApp function is running",
-        timestamp: new Date().toISOString(),
-        config: {
-          hasVerifyToken: !!VERIFY_TOKEN,
-          hasAccessToken: !!ACCESS_TOKEN,
-          hasPhoneId: !!PHONE_ID,
-          hasSupabaseUrl: !!SB_URL,
-          hasServiceKey: !!SB_SERVICE
-        }
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Webhook verification
-    if (req.method === 'GET') {
-      const mode = url.searchParams.get('hub.mode');
-      const token = url.searchParams.get('hub.verify_token');
-      const challenge = url.searchParams.get('hub.challenge');
-      
-      console.log(`🔐 Verification: mode=${mode}, token=${token ? 'SET' : 'MISSING'}`);
-      
-      if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-        console.log("✅ Verification successful");
-        return new Response(challenge || "", { status: 200, headers: corsHeaders });
-      }
-      
-      console.log("❌ Verification failed");
-      return new Response("Verification failed", { status: 403, headers: corsHeaders });
-    }
-
-    // Process webhook messages
-    if (req.method === 'POST') {
-      const body = await req.json().catch(() => ({}));
-      console.log("📨 Webhook payload:", JSON.stringify(body, null, 2));
-      
-      // Log to database
-      if (sb) {
-        try {
-          await sb.from("whatsapp_logs").insert({ 
-            direction: "in", 
-            payload: body 
-          });
-        } catch (logError) {
-          console.error("⚠️ Failed to log:", logError);
-        }
-      }
-
-      // Process messages
-      const entry = body?.entry?.[0];
-      const change = entry?.changes?.[0]?.value;
-      const message = change?.messages?.[0];
-      const contact = change?.contacts?.[0];
-      
-      if (message && contact) {
-        const from = contact.wa_id;
-        
-        // Extract interactive ID
-        const interactiveId = message.interactive?.type === "button_reply" 
-          ? message.interactive.button_reply?.id
-          : message.interactive?.type === "list_reply"
-          ? message.interactive.list_reply?.id
-          : undefined;
-        
-        try {
-          await processMessage(from, message, interactiveId, contact.profile?.name);
-          console.log("✅ Message processed");
-        } catch (processError) {
-          console.error("❌ Process error:", processError);
-        }
-      }
-
-      return new Response(JSON.stringify({ status: "received" }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
-    return new Response("Method not allowed", { status: 405, headers: corsHeaders });
-    
-  } catch (error) {
-    console.error("💥 Function error:", error);
-    return new Response(`Error: ${error.message}`, { 
-      status: 500, 
-      headers: corsHeaders 
-    });
+  const url = new URL(req.url);
+  if (req.method === "GET" && url.pathname === "/") {
+    const mode = url.searchParams.get("hub.mode");
+    const token = url.searchParams.get("hub.verify_token");
+    const challenge = url.searchParams.get("hub.challenge");
+    if (mode === "subscribe" && token === WABA_VERIFY) return new Response(challenge ?? "", {status:200});
+    return bad("Verification failed",403);
   }
+  if (req.method !== "POST") return ok({ok:true});
+
+  const body = await req.json().catch(()=> ({}));
+  await sb.from("whatsapp_logs").insert({ direction:"in", payload:body });
+  const entry = body?.entry?.[0]; const change = entry?.changes?.[0]?.value;
+  const m = change?.messages?.[0]; const contact = change?.contacts?.[0];
+  if(!m || !contact) return ok({});
+  const from = `+${contact.wa_id}`; const name = contact?.profile?.name;
+  const { user, session } = await getOrCreateUser(from, name);
+  const to = from;
+
+  // Interactive?
+  const iid = getInteractiveId(m);
+  if (iid) {
+    // Main navigation
+    if (iid === "MOBILITY") { await setState(session.id,"MOBILITY_MENU",{}); await showMobilityMenu(to); return ok({}); }
+    if (iid === "INSURANCE") {
+      await setState(session.id, INS_STATES.CHECK, {});
+      // Do we have any vehicle?
+      const { data: vs } = await sb.from("vehicles").select("*").eq("user_id",user.id).limit(1);
+      if (!vs?.length) {
+        await setState(session.id, INS_STATES.COLLECT, {});
+        await text(to, "Please send:\n1) Carte Jaune (photo/PDF)\n2) Old Insurance (photo/PDF)\nReply 'Agent' for human support.\nSend 'Done' when finished.");
+      } else {
+        await setState(session.id, INS_STATES.START, { vehicle_id: vs[0].id, plate: vs[0].plate });
+        await btns(to, `Insurance for ${vs[0].plate ?? 'your vehicle'} — Start date?`, [
+          {id:"START_TODAY", title:"Today"},
+          {id:"START_PICK", title:"Pick date"}
+        ]);
+      }
+      return ok({});
+    }
+    if (iid === "QR") { await setState(session.id,"QR_MENU",{}); await showQRMenu(to); return ok({}); }
+    if (iid === "PROFILE") {
+      await text(to, `Phone: ${user.wa_phone}\nDefault MoMo: ${user.default_momo_phone ?? '—'}\nCode: ${user.default_momo_code ?? '—'}`);
+      await showMainMenu(to); return ok({});
+    }
+    if (iid === "HOME") { await setState(session.id,"MAIN_MENU",{}); await showMainMenu(to); return ok({}); }
+
+    // Mobility subflows
+    if (iid === "ND") {
+      await setState(session.id,"ND_SELECT_TYPE",{});
+      const { data: types } = await sb.from("vehicle_types").select("*");
+      await list(to,"Choose vehicle type:", (types||[]).map((t:any)=>({id:`ND_V_${t.code}`, title:t.label})), "Vehicle Types","Nearby");
+      return ok({});
+    }
+    if (iid === "ST") {
+      await setState(session.id,"ST_ROLE",{});
+      await btns(to,"Schedule Trip: choose role",[
+        {id:"ST_ROLE_PAX", title:"Passenger"},
+        {id:"ST_ROLE_DRV", title:"Driver"},
+        {id:"MOBILITY", title:"⬅️ Back"}
+      ]); return ok({});
+    }
+    if (iid === "AV") {
+      await setState(session.id,"AV_USAGE",{});
+      const { data: vtypes } = await sb.from("vehicle_types").select("*");
+      await list(to,"Usage type:", (vtypes||[]).map((t:any)=>({id:`AV_U_${t.code}`, title:t.label})), "Usage Types","Add Vehicle");
+      return ok({});
+    }
+    if (iid.startsWith("ND_V_")) {
+      const vt = iid.replace("ND_V_","");
+      await setState(session.id,"ND_WAIT_LOCATION",{ nd:{vehicle_type:vt} });
+      await text(to,"Share your pickup location (Attach → Location).");
+      return ok({});
+    }
+    if (iid.startsWith("AV_U_")) {
+      const usage = iid.replace("AV_U_","");
+      await setState(session.id,"AV_DOC",{ av:{usage_type:usage} });
+      await text(to,"Upload insurance certificate (photo or PDF).");
+      return ok({});
+    }
+
+    // QR subflows
+    if (iid === "QR_PHONE") {
+      await setState(session.id,"QR_PHONE",{ qr:{type:"phone"} });
+      if(!user.default_momo_phone){ await text(to,"Enter MoMo phone (07xxxxxxxx or +2507…)"); }
+      else {
+        await setState(session.id,"QR_AMOUNT_MODE",{ qr:{type:"phone", phone:user.default_momo_phone} });
+        await btns(to,"Amount mode:",[
+          {id:"QR_AMT_WITH", title:"With amount"},
+          {id:"QR_AMT_NONE", title:"No amount"},
+          {id:"QR", title:"⬅️ Back"}]);
+      }
+      return ok({});
+    }
+    if (iid === "QR_CODE") {
+      await setState(session.id,"QR_CODE",{ qr:{type:"code"} });
+      if(!user.default_momo_code){ await text(to,"Enter MoMo merchant code (4–9 digits):"); }
+      else {
+        await setState(session.id,"QR_AMOUNT_MODE",{ qr:{type:"code", code:user.default_momo_code} });
+        await btns(to,"Amount mode:",[
+          {id:"QR_AMT_WITH", title:"With amount"},
+          {id:"QR_AMT_NONE", title:"No amount"},
+          {id:"QR", title:"⬅️ Back"}]);
+      }
+      return ok({});
+    }
+    if (iid === "QR_AMT_WITH") {
+      await setState(session.id,"QR_AMOUNT_INPUT",{ qr:{...(session.context as any).qr} });
+      await list(to,"Quick pick:",[
+        {id:"QR_A_1000", title:"1,000"},
+        {id:"QR_A_2000", title:"2,000"},
+        {id:"QR_A_5000", title:"5,000"},
+        {id:"QR_A_OTHER", title:"Other amount"}],"Amounts","Pick amount");
+      return ok({});
+    }
+    if (iid === "QR_AMT_NONE") {
+      const ctx = session.context as any; ctx.qr = { ...(ctx.qr||{}), amount:null };
+      await setState(session.id,"QR_GENERATE",ctx); await generateAndSendQR(to, session.user_id, ctx); return ok({});
+    }
+    if (["QR_A_1000","QR_A_2000","QR_A_5000"].includes(iid)) {
+      const amt = iid==="QR_A_1000"?1000: iid==="QR_A_2000"?2000: 5000;
+      const ctx = session.context as any; ctx.qr = { ...(ctx.qr||{}), amount:amt };
+      await setState(session.id,"QR_GENERATE",ctx); await generateAndSendQR(to, session.user_id, ctx); return ok({});
+    }
+    if (iid === "QR_A_OTHER") { await text(to,"Enter amount (>0):"); return ok({}); }
+    if (iid === "QR_AGAIN") { await showQRMenu(to); return ok({}); }
+    if (iid === "QR_CHANGE_DEFAULT") {
+      const ctx = session.context as any;
+      if(ctx.qr?.type==="phone"){ await setState(session.id,"QR_PHONE",{ qr:{type:"phone"} }); await text(to,"Enter new default MoMo phone:"); }
+      else { await setState(session.id,"QR_CODE",{ qr:{type:"code"} }); await text(to,"Enter new default MoMo code (4–9 digits):"); }
+      return ok({});
+    }
+
+    // Insurance: start date → period → addons → summary
+    if (session.state === INS_STATES.START) {
+      if (iid === "START_TODAY") {
+        const ctx = { ...(session.context||{}), start_date: new Date().toISOString().slice(0,10) };
+        await setState(session.id, INS_STATES.PERIOD, ctx);
+        const { data: periods=[] } = await fetchPeriods();
+        await list(to,"Choose duration", periods.map((p:any)=>({id:`PERIOD_${p.id}`,title:p.label,description:`${p.days} days`})), "Period","Available");
+        return ok({});
+      }
+      if (iid === "START_PICK") { await text(to,"Send date as YYYY-MM-DD:"); return ok({}); }
+    }
+    if (session.state === INS_STATES.PERIOD && iid.startsWith("PERIOD_")) {
+      const ctx = { ...(session.context||{}), period_id: iid.replace("PERIOD_","") };
+      await setState(session.id, INS_STATES.ADDONS, ctx);
+      const { data: addons=[] } = await fetchAddons();
+      await list(to,"Pick add-ons (send 'Done' to continue)", addons.map((a:any)=>({id:`ADDON_${a.id}`,title:a.label,description:a.code})), "Add-ons","Available");
+      return ok({});
+    }
+    if (session.state === INS_STATES.SUMMARY) {
+      if (iid === "SUM_CONTINUE") {
+        const c = session.context as any;
+        const { data: ins } = await sb.from("insurance_quotes").insert({
+          user_id: user.id,
+          vehicle_id: c.vehicle_id ?? null,
+          start_date: c.start_date,
+          period_id: c.period_id,
+          addons: c.addons ?? [],
+          pa_category_id: c.pa_category_id ?? null,
+          status: "pending_backoffice"
+        }).select("id").single();
+        await setState(session.id, INS_STATES.QUEUED, { quote_id: ins!.id });
+        await text(to,"Preparing quotation… Backoffice will attach the PDF shortly.");
+        return ok({});
+      }
+      if (iid === "CANCEL") { await setState(session.id,"MAIN_MENU",{}); await showMainMenu(to); return ok({}); }
+    }
+    if (session.state === INS_STATES.DECIDE) {
+      if (iid === "PROCEED") {
+        await setState(session.id, INS_STATES.PLAN, session.context);
+        const { data: plans=[] } = await sb.from("payment_plans").select("*").eq("is_active",true);
+        await list(to,"Payment plan:", plans.map((p:any)=>({id:`PLAN_${p.id}`,title:p.label,description:p.description||""})),"Payment Plans","Plans");
+        return ok({});
+      }
+      if (iid === "ASK_CHANGES") { await text(to,"A human agent will join to adjust your quote."); return ok({}); }
+      if (iid === "CANCEL") { await setState(session.id,"MAIN_MENU",{}); await showMainMenu(to); return ok({}); }
+    }
+    if (session.state === INS_STATES.PLAN && iid.startsWith("PLAN_")) {
+      const ctx = { ...(session.context||{}), payment_plan_id: iid.replace("PLAN_","") };
+      await setState(session.id, INS_STATES.AWAIT, ctx);
+      const qId = (ctx as any).quote_id;
+      const q = await sb.from("insurance_quotes").select("amount_cents").eq("id",qId).single();
+      const amount = Math.max(q.data?.amount_cents || 0, 0);
+      const local = user.default_momo_phone ? user.default_momo_phone : user.wa_phone;
+      const ussd = `*182*1*1*${local.replace('+250','0').replace('+','')}*${amount}#`;
+      await btns(to, `Tap to pay: ${buildTel(ussd)}`, [
+        {id:"PAID", title:"I paid"},
+        {id:"REMIND_ME", title:"Remind me later"}
+      ]);
+      return ok({});
+    }
+    if (session.state === INS_STATES.AWAIT) {
+      if (iid === "PAID") { await text(to,"We are checking your payment…"); return ok({}); }
+      if (iid === "REMIND_ME") { await text(to,"We'll remind you in ~10 minutes if not received."); return ok({}); }
+    }
+
+    // Fallback to main menu
+    await showMainMenu(to);
+    return ok({});
+  }
+
+  // Non-interactive types
+  // Location → Nearby drivers
+  if (m?.location && session.state === "ND_WAIT_LOCATION") {
+    const p = { lat: m.location.latitude, lng: m.location.longitude };
+    const { data: drivers=[] , error } = await sb.rpc("nearby_drivers", { lat:p.lat, lng:p.lng, km: 15 });
+    if (error || !drivers.length) { await text(to,"No drivers nearby right now. Try again later."); await showMobilityMenu(to); return ok({}); }
+    const rows = drivers.map((d:any,i:number)=>({ id:`ND_BOOK_${d.driver_id}`, title:`#${i+1} ${d.wa_name||'Driver'} — ${d.distance_km.toFixed(1)} km` }));
+    await sb.from("chat_sessions").update({ state:"ND_CHOOSE_DRIVER", context:{ nd:{pickup:p,drivers} } }).eq("id",session.id);
+    await list(to,"Top-10 nearby drivers:", rows, "Drivers","Nearby");
+    return ok({});
+  }
+
+  // Media (images/pdfs) → AV_DOC or INS_COLLECT_DOCS
+  if (m?.image || m?.document) {
+    const mediaId = m.image?.id || m.document?.id;
+    if (mediaId) {
+      const { bytes, mime } = await fetchMedia(mediaId);
+      const ext = mime.includes("pdf")? "pdf":"jpg";
+      const path = `docs/${user.id}/${crypto.randomUUID()}.${ext}`;
+      const up = await sb.storage.from("documents").upload(path, bytes, { contentType: mime, upsert:true });
+      if (!up.error) {
+        const { data: signed } = await sb.storage.from("documents").createSignedUrl(path, 600);
+        if (session.state === "AV_DOC") {
+          const ocr = await ocrVehicleDoc(signed!.signedUrl);
+          const usage = (session.context as any).av?.usage_type;
+          await sb.from("vehicles").insert({
+            user_id:user.id, usage_type:usage, plate:ocr.plate||null, vin:ocr.vin||null,
+            make:ocr.make||null, model:ocr.model||null, model_year:ocr.model_year||null,
+            insurance_provider:ocr.insurance_provider||null, insurance_policy:ocr.insurance_policy||null,
+            insurance_expiry:ocr.insurance_expiry||null, doc_url:path, verified:false, extra:ocr
+          });
+          await setState(session.id,"MOBILITY_MENU",{});
+          await text(to,`Vehicle saved: ${ocr.plate ?? '(no plate parsed)'}\nVerification pending.`);
+          await showMobilityMenu(to);
+          return ok({});
+        }
+        if (session.state === INS_STATES.COLLECT) {
+          // Accept multiple; user replies 'Done' to proceed
+          await text(to,"Received document. Send more or reply 'Done' to continue.");
+          return ok({});
+        }
+      }
+    }
+  }
+
+  // Text inputs for QR / Insurance
+  if (m?.text?.body) {
+    const t = m.text.body.trim();
+    if (session.state === "QR_PHONE") {
+      const phone = normalizePhone(t);
+      await sb.from("profiles").update({ default_momo_phone:phone }).eq("id",user.id);
+      await setState(session.id,"QR_AMOUNT_MODE",{ qr:{type:"phone", phone} });
+      await btns(to,"Amount mode:",[
+        {id:"QR_AMT_WITH", title:"With amount"},
+        {id:"QR_AMT_NONE", title:"No amount"},
+        {id:"QR", title:"⬅️ Back"}]);
+      return ok({});
+    }
+    if (session.state === "QR_CODE") {
+      if(!/^\d{4,9}$/.test(t)){ await text(to,"Invalid code. Enter 4–9 digits:"); return ok({}); }
+      await sb.from("profiles").update({ default_momo_code:t }).eq("id",user.id);
+      await setState(session.id,"QR_AMOUNT_MODE",{ qr:{type:"code", code:t} });
+      await btns(to,"Amount mode:",[
+        {id:"QR_AMT_WITH", title:"With amount"},
+        {id:"QR_AMT_NONE", title:"No amount"},
+        {id:"QR", title:"⬅️ Back"}]);
+      return ok({});
+    }
+    if (session.state === "QR_AMOUNT_INPUT") {
+      const amt = parseInt(t.replace(/[^\d]/g,''),10);
+      if(!amt || amt<=0){ await text(to,"Amount must be > 0. Enter again:"); return ok({}); }
+      const ctx = (await sb.from("chat_sessions").select("context").eq("id",session.id).single()).data!.context as any;
+      ctx.qr = { ...(ctx.qr||{}), amount: amt };
+      await setState(session.id,"QR_GENERATE",ctx);
+      await generateAndSendQR(to, session.user_id, ctx);
+      return ok({});
+    }
+    if (session.state === INS_STATES.COLLECT) {
+      if (t.toLowerCase() === "agent") { await text(to,"A human agent will join shortly. Please describe the issue."); return ok({}); }
+      if (t.toLowerCase() === "done") {
+        await setState(session.id, INS_STATES.START, {});
+        await btns(to,"Start date?",[
+          {id:"START_TODAY", title:"Today"},
+          {id:"START_PICK", title:"Pick date"}]);
+        return ok({});
+      }
+    }
+    if (session.state === INS_STATES.START && /^\d{4}-\d{2}-\d{2}$/.test(t)) {
+      const ctx = { ...(session.context||{}), start_date: t };
+      await setState(session.id, INS_STATES.PERIOD, ctx);
+      const { data: periods=[] } = await fetchPeriods();
+      await list(to,"Choose duration", periods.map((p:any)=>({id:`PERIOD_${p.id}`,title:p.label,description:`${p.days} days`})), "Period","Available");
+      return ok({});
+    }
+    if (session.state === INS_STATES.ADDONS) {
+      const c = session.context as any;
+      if (!c.addons) c.addons = [];
+      // Allow 'Done' to move on
+      if (t.toLowerCase() === "done") {
+        // If PA included (by code), require PA category
+        // (Admin can use addon code 'pa' to signal this. If not present, skip.)
+        const { data: ads=[] } = await fetchAddons();
+        const pa = ads.find((a:any)=> a.code?.toLowerCase() === 'pa');
+        if (pa && c.addons.includes(pa.id)) {
+          await setState(session.id, INS_STATES.PA, c);
+          const { data: cats=[] } = await fetchPA();
+          await list(to,"Personal Accident category", cats.map((p:any)=>({id:`PA_${p.id}`,title:p.label})),"PA","Categories");
+          return ok({});
+        } else {
+          await setState(session.id, INS_STATES.SUMMARY, c);
+          await btns(to,"Summary → Continue?",[
+            {id:"SUM_CONTINUE", title:"Continue"},
+            {id:"CANCEL", title:"Cancel"}]);
+          return ok({});
+        }
+      }
+      // If the user tapped list rows, we handle in interactive branch; here just guide
+      await text(to,"Pick add-ons from the list or send 'Done'.");
+      return ok({});
+    }
+    if (session.state === INS_STATES.PA && t) {
+      await text(to,"Please choose PA category from the list.");
+      return ok({});
+    }
+  }
+
+  // Default to main menu
+  await showMainMenu(to);
+  return ok({});
 });
