@@ -323,16 +323,20 @@ Deno.serve(async (req) => {
     }
     
     // Log inbound message
-    await sb.from("whatsapp_logs").insert({
-      direction: "in",
-      phone_number: contact.wa_id || "unknown",
-      message_type: m.type || "unknown",
-      message_content: JSON.stringify(m),
-      metadata: { webhook_body: body },
-      status: "received",
-      message_id: messageId,
-      payload: body
-    }).catch((err) => logger.log("error", "Failed to log inbound message", { error: err.message }));
+    try {
+      await sb.from("whatsapp_logs").insert({
+        direction: "in",
+        phone_number: contact.wa_id || "unknown",
+        message_type: m.type || "unknown",
+        message_content: JSON.stringify(m),
+        metadata: { webhook_body: body },
+        status: "received",
+        message_id: messageId,
+        payload: body
+      });
+    } catch (err) {
+      logger.log("error", "Failed to log inbound message", { error: err.message });
+    }
     
     const from = `+${contact.wa_id}`;
     const { user, session } = await getOrCreateUser(from, contact?.profile?.name);
