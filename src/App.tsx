@@ -10,7 +10,6 @@ import { TestWhatsApp } from './test-whatsapp';
 import Auth from "./pages/Auth";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
-import { ShareTarget } from "./components/share/ShareTarget";
 
 const queryClient = new QueryClient();
 
@@ -36,14 +35,6 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Profile />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/share" 
-              element={
-                <ProtectedRoute>
-                  <ShareTarget />
                 </ProtectedRoute>
               } 
             />
