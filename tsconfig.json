@@ -9,6 +9,8 @@
     "paths": {
       "@/*": ["./src/*"]
     },
+    "jsx": "react-jsx",
+    "types": ["vitest/globals", "@testing-library/jest-dom"],
     "noImplicitAny": false,
     "noUnusedParameters": false,
     "skipLibCheck": true,
