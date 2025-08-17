@@ -1,81 +1,52 @@
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useState } from 'react';
 
-export function TestWhatsApp() {
-  const [phone, setPhone] = useState('');
-  const [message, setMessage] = useState('');
-  const [response, setResponse] = useState('');
+export const TestWhatsApp = () => {
+  const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSend = async () => {
-    if (!phone || !message) return;
-    
+  const testFunction = async () => {
     setLoading(true);
     try {
-      // Use environment variable for Supabase URL
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
-      if (!supabaseUrl) {
-        throw new Error('Missing SUPABASE_URL environment variable');
-      }
-      
-      const response = await fetch(`${supabaseUrl}/functions/v1/whatsapp/debug`, {
+      // Test debug endpoint
+      const response = await fetch('https://lgicrnzvnbmsnxhzytro.supabase.co/functions/v1/whatsapp/debug', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          phone,
-          message,
-        }),
+          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxnaWNybnp2bmJtc254aHp5dHJvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyMDg5MDgsImV4cCI6MjA3MDc4NDkwOH0.org4HqULlkLKD4ZPKtUD9aFGxNxuLRm82n-y6USJVfs'
+        }
       });
-
+      
       const data = await response.json();
-      setResponse(JSON.stringify(data, null, 2));
+      setResult({ 
+        status: response.status, 
+        data: data,
+        ok: response.ok
+      });
     } catch (error) {
-      setResponse(`Error: ${error.message}`);
-    } finally {
-      setLoading(false);
+      setResult({ error: error.message });
     }
+    setLoading(false);
   };
 
+  useEffect(() => {
+    testFunction();
+  }, []);
+
   return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader>
-        <CardTitle>Test WhatsApp Integration</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium mb-2">Phone Number</label>
-          <Input
-            type="tel"
-            placeholder="+250700000000"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-2">Message</label>
-          <Input
-            type="text"
-            placeholder="Hello from test app"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-          />
-        </div>
-        <Button onClick={handleSend} disabled={loading} className="w-full">
-          {loading ? 'Sending...' : 'Send Test Message'}
-        </Button>
-        {response && (
-          <div className="mt-4">
-            <label className="block text-sm font-medium mb-2">Response</label>
-            <pre className="bg-gray-100 p-2 rounded text-xs overflow-auto">
-              {response}
-            </pre>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <div className="p-4">
+      <h2 className="text-xl font-bold mb-4">WhatsApp Function Test</h2>
+      {loading && <p>Testing...</p>}
+      {result && (
+        <pre className="bg-gray-100 p-4 rounded overflow-auto">
+          {JSON.stringify(result, null, 2)}
+        </pre>
+      )}
+      <button 
+        onClick={testFunction}
+        className="mt-4 px-4 py-2 bg-blue-500 text-white rounded"
+      >
+        Test Again
+      </button>
+    </div>
   );
-}
+};

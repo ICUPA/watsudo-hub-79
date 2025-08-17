@@ -3,141 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
-    <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#2563eb" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Watsudo Hub" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="msapplication-TileColor" content="#2563eb" />
-    
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="/manifest.json" />
-    
-    <!-- PWA Icons -->
-    <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16x16.png" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180x180.png" />
-    <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
-    <link rel="apple-touch-icon" sizes="144x144" href="/icons/icon-144x144.png" />
-    <link rel="apple-touch-icon" sizes="120x120" href="/icons/icon-120x120.png" />
-    <link rel="apple-touch-icon" sizes="114x114" href="/icons/icon-114x114.png" />
-    <link rel="apple-touch-icon" sizes="76x76" href="/icons/icon-76x76.png" />
-    <link rel="apple-touch-icon" sizes="72x72" href="/icons/icon-72x72.png" />
-    <link rel="apple-touch-icon" sizes="60x60" href="/icons/icon-60x60.png" />
-    <link rel="apple-touch-icon" sizes="57x57" href="/icons/icon-57x57.png" />
-    
-    <!-- PWA Preconnect -->
-    <link rel="preconnect" href="https://maps.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    
-    <!-- PWA DNS Prefetch -->
-    <link rel="dns-prefetch" href="//maps.googleapis.com" />
-    <link rel="dns-prefetch" href="//fonts.googleapis.com" />
-    
-    <title>Watsudo Hub - Mobility & USSD QR</title>
-    <meta name="description" content="Mobility services and USSD QR code generation platform for Rwanda. Find nearby drivers, schedule trips, and generate payment QR codes." />
-    <meta name="keywords" content="mobility, transportation, Rwanda, QR codes, USSD, drivers, rides, taxi, motorcycle" />
-    <meta name="author" content="Watsudo Hub" />
-    <meta name="robots" content="index, follow" />
-    
-    <!-- Open Graph Meta Tags -->
-    <meta property="og:title" content="Watsudo Hub - Mobility & USSD QR" />
-    <meta property="og:description" content="Mobility services and USSD QR code generation platform for Rwanda" />
+    <title>watsudo-hub</title>
+    <meta name="description" content="Lovable Generated Project" />
+    <meta name="author" content="Lovable" />
+
+    <meta property="og:title" content="watsudo-hub" />
+    <meta property="og:description" content="Lovable Generated Project" />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://watsudo-hub.com" />
-    <meta property="og:image" content="/icons/icon-512x512.png" />
-    <meta property="og:site_name" content="Watsudo Hub" />
-    <meta property="og:locale" content="en_US" />
-    
-    <!-- Twitter Card Meta Tags -->
+    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Watsudo Hub - Mobility & USSD QR" />
-    <meta name="twitter:description" content="Mobility services and USSD QR code generation platform for Rwanda" />
-    <meta name="twitter:image" content="/icons/icon-512x512.png" />
-    
-    <!-- Additional PWA Meta Tags -->
-    <meta name="application-name" content="Watsudo Hub" />
-    <meta name="msapplication-tap-highlight" content="no" />
-    <meta name="format-detection" content="telephone=no" />
-    <meta name="msapplication-allowDomainApiCalls" content="true" />
-    <meta name="msapplication-allowDomainMetaTags" content="true" />
-    
-    <!-- PWA Splash Screen for Android -->
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="mobile-web-app-status-bar-style" content="black-translucent" />
-    
-    <!-- PWA Orientation -->
-    <meta name="orientation" content="portrait" />
-    
-    <!-- PWA Viewport for Mobile -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="twitter:site" content="@lovable_dev" />
+    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
   </head>
+
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    
-    <!-- PWA Service Worker Registration -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function() {
-          navigator.serviceWorker.register('/sw.js')
-            .then(function(registration) {
-              console.log('SW registered: ', registration);
-            })
-            .catch(function(registrationError) {
-              console.log('SW registration failed: ', registrationError);
-            });
-        });
-      }
-    </script>
-    
-    <!-- PWA Install Prompt Handler -->
-    <script>
-      let deferredPrompt;
-      
-      window.addEventListener('beforeinstallprompt', (e) => {
-        e.preventDefault();
-        deferredPrompt = e;
-        
-        // Show custom install button or banner
-        const installBanner = document.createElement('div');
-        installBanner.id = 'install-banner';
-        installBanner.innerHTML = `
-          <div style="position: fixed; top: 0; left: 0; right: 0; background: #2563eb; color: white; padding: 12px; text-align: center; z-index: 9999;">
-            <span>Install Watsudo Hub for a better experience</span>
-            <button id="install-btn" style="margin-left: 12px; padding: 6px 12px; background: white; color: #2563eb; border: none; border-radius: 4px; cursor: pointer;">Install</button>
-            <button id="dismiss-btn" style="margin-left: 8px; padding: 6px 12px; background: transparent; color: white; border: 1px solid white; border-radius: 4px; cursor: pointer;">Dismiss</button>
-            </div>
-        `;
-        document.body.appendChild(installBanner);
-        
-        document.getElementById('install-btn').addEventListener('click', () => {
-          deferredPrompt.prompt();
-          deferredPrompt.userChoice.then((choiceResult) => {
-            if (choiceResult.outcome === 'accepted') {
-              console.log('User accepted the install prompt');
-            } else {
-              console.log('User dismissed the install prompt');
-            }
-            deferredPrompt = null;
-            document.getElementById('install-banner').remove();
-          });
-        });
-        
-        document.getElementById('dismiss-btn').addEventListener('click', () => {
-          document.getElementById('install-banner').remove();
-        });
-      });
-      
-      window.addEventListener('appinstalled', (evt) => {
-        console.log('App was installed');
-        if (document.getElementById('install-banner')) {
-          document.getElementById('install-banner').remove();
-        }
-      });
-    </script>
   </body>
 </html>
