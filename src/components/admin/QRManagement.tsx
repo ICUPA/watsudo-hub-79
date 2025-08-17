@@ -66,7 +66,12 @@ export function QRManagement() {
   };
 
   const getQRImageUrl = (filePath: string) => {
-    const supabaseUrl = "https://lgicrnzvnbmsnxhzytro.supabase.co";
+    // Use environment variable for Supabase URL
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+      console.error('Missing SUPABASE_URL environment variable');
+      return '';
+    }
     return `${supabaseUrl}/storage/v1/object/public/qr/${filePath.split('qr/')[1] || filePath}`;
   };
 

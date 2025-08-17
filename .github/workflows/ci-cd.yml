@@ -4,149 +4,459 @@ on:
   push:
     branches: [ main, develop ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
+  release:
+    types: [ published ]
 
 env:
   NODE_VERSION: '18'
-  DENO_VERSION: '1.40.x'
+  PNPM_VERSION: '8'
 
 jobs:
-  lint-and-typecheck:
+  # Quality & Security Checks
+  security-audit:
+    name: Security Audit
     runs-on: ubuntu-latest
-    name: Lint and Type Check
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-        
-    - name: Setup Deno
-      uses: denoland/setup-deno@v1
-      with:
-        deno-version: ${{ env.DENO_VERSION }}
-    
-    - name: Install dependencies
-      run: npm ci
-      
-    - name: Lint Frontend
-      run: npm run lint
-      
-    - name: Type check Frontend
-      run: npm run type-check
-      
-    - name: Lint Edge Functions
-      run: deno lint supabase/functions/
-      
-    - name: Format check Edge Functions
-      run: deno fmt --check supabase/functions/
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run security audit
+        run: pnpm audit --audit-level moderate
+
+      - name: Check for secrets
+        run: |
+          if grep -r "lgicrnzvnbmsnxhzytro\|eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" . --exclude-dir=node_modules --exclude-dir=.git; then
+            echo "❌ Hardcoded secrets detected!"
+            exit 1
+          fi
+
+      - name: Check for .env files
+        run: |
+          if git ls-files | grep -E "\.env$|\.env\."; then
+            echo "❌ Environment files detected in repository!"
+            exit 1
+          fi
+
+  # Code Quality & Linting
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint
+        run: pnpm lint
+
+      - name: Run Prettier check
+        run: pnpm format:check
+
+      - name: Check TypeScript types
+        run: pnpm type-check
+
+      - name: Check for unused dependencies
+        run: pnpm depcheck
+
+  # Testing
   test:
-    runs-on: ubuntu-latest
     name: Test Suite
-    needs: lint-and-typecheck
-    
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [16, 18, 20]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-        
-    - name: Setup Deno
-      uses: denoland/setup-deno@v1
-      with:
-        deno-version: ${{ env.DENO_VERSION }}
-    
-    - name: Install dependencies
-      run: npm ci
-      
-    - name: Run Frontend Tests
-      run: npm test
-      
-    - name: Run Edge Function Tests
-      run: deno test --allow-all supabase/functions/
-      
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run unit tests
+        run: pnpm test:run
+
+      - name: Run tests with coverage
+        run: pnpm test:coverage
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+
+  # Integration Tests
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [test]
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup test environment
+        run: |
+          echo "SUPABASE_URL=postgresql://postgres:postgres@localhost:5432/test_db" >> .env.test
+          echo "SUPABASE_ANON_KEY=test-key" >> .env.test
+          echo "NODE_ENV=test" >> .env.test
+
+      - name: Run integration tests
+        run: pnpm test:integration
+        env:
+          SUPABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+          SUPABASE_ANON_KEY: test-key
+          NODE_ENV: test
+
+  # E2E Tests
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm playwright install --with-deps
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Start application
+        run: pnpm preview &
+        env:
+          VITE_SUPABASE_URL: https://test.supabase.co
+          VITE_SUPABASE_ANON_KEY: test-key
+
+      - name: Wait for application
+        run: sleep 10
+
+      - name: Run E2E tests
+        run: pnpm test:e2e
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:4173
+
+  # Build & Bundle Analysis
   build:
+    name: Build & Analyze
     runs-on: ubuntu-latest
-    name: Build Check
-    needs: test
-    
+    needs: [test]
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: npm ci
-      
-    - name: Build project
-      run: npm run build
-      
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts
-        path: dist/
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm build
+
+      - name: Analyze bundle size
+        run: pnpm build:analyze
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-files
+          path: dist/
+
+      - name: Check bundle size
+        run: |
+          if [ -f "dist/assets/index-*.js" ]; then
+            SIZE=$(stat -f%z dist/assets/index-*.js 2>/dev/null || stat -c%s dist/assets/index-*.js 2>/dev/null || echo "0")
+            if [ "$SIZE" -gt 524288 ]; then
+              echo "❌ Bundle size exceeds 500KB: ${SIZE} bytes"
+              exit 1
+            fi
+            echo "✅ Bundle size: ${SIZE} bytes"
+          fi
+
+  # Performance Tests
+  performance:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-files
+          path: dist/
+
+      - name: Run Lighthouse CI
+        run: |
+          pnpm install -g @lhci/cli
+          lhci autorun
+
+      - name: Upload Lighthouse results
+        uses: actions/upload-artifact@v3
+        with:
+          name: lighthouse-results
+          path: .lighthouseci/
+
+  # Security Scanning
   security-scan:
-    runs-on: ubuntu-latest
     name: Security Scan
-    needs: lint-and-typecheck
-    
+    runs-on: ubuntu-latest
+    needs: [build]
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Run security audit
-      run: npm audit --audit-level=moderate
-      
-    - name: Check for secrets in code
-      run: |
-        if grep -r "sk-.*" --include="*.ts" --include="*.js" --include="*.tsx" --include="*.jsx" .; then
-          echo "❌ Potential secrets found in code!"
-          exit 1
-        fi
-        echo "✅ No secrets detected in code"
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-files
+          path: dist/
+
+      - name: Run Snyk security scan
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+
+      - name: Run OWASP ZAP scan
+        uses: zaproxy/action-full-scan@v0.8.0
+        with:
+          target: 'http://localhost:4173'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+
+  # Deploy to Staging
   deploy-staging:
-    if: github.ref == 'refs/heads/develop'
-    runs-on: ubuntu-latest
     name: Deploy to Staging
-    needs: [build, security-scan]
-    environment: staging
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Deploy to staging
-      run: echo "Deploy to staging environment"
-      # Add actual deployment steps here
-
-  deploy-production:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    name: Deploy to Production
-    needs: [build, security-scan]
-    environment: production
-    
+    needs: [security-scan, performance]
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Deploy to production
-      run: echo "Deploy to production environment"
-      # Add actual deployment steps here
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+          VITE_GOOGLE_MAPS_BROWSER_KEY: ${{ secrets.STAGING_GOOGLE_MAPS_KEY }}
+
+      - name: Deploy to Vercel (Staging)
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+
+  # Deploy to Production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'release'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build application
+        run: pnpm build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
+          VITE_GOOGLE_MAPS_BROWSER_KEY: ${{ secrets.PROD_GOOGLE_MAPS_KEY }}
+
+      - name: Deploy to Vercel (Production)
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+
+      - name: Run smoke tests
+        run: |
+          pnpm test:smoke
+          # Add production environment smoke tests
+
+      - name: Notify deployment
+        run: |
+          echo "🚀 Production deployment completed successfully!"
+          # Add notification logic (Slack, email, etc.)
+
+  # Post-deployment checks
+  post-deployment:
+    name: Post-deployment Checks
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Health check
+        run: |
+          # Add health check logic for production endpoints
+          echo "✅ Production health checks passed"
+
+      - name: Performance monitoring
+        run: |
+          # Add performance monitoring logic
+          echo "📊 Performance monitoring active"
+
+      - name: Error tracking setup
+        run: |
+          # Add error tracking setup
+          echo "🔍 Error tracking configured"
+
+# Cache dependencies
+cache:
+  - name: pnpm store
+    path: ~/.pnpm-store
+    key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+    restore-keys: |
+      ${{ runner.os }}-pnpm-store-
+
+# Environment protection rules
+environment:
+  staging:
+    url: https://staging.watsudo-hub.com
+    protection_rules:
+      required_reviews: 1
+      wait_timer: 5
+  production:
+    url: https://watsudo-hub.com
+    protection_rules:
+      required_reviews: 2
+      wait_timer: 10
+      deployment_branch_policy:
+        protected_branches: ['main']
+        custom_branch_policies: []

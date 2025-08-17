@@ -1,3 +1,4 @@
+// Enhanced Ride Management Component
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import * as base64 from "https://deno.land/std@0.223.0/encoding/base64.ts";
@@ -47,20 +48,7 @@ const waClient = new WhatsAppClient(WABA_PHONE_ID, WABA_TOKEN, WABA_APP_SECRET, 
 // State constants - strict flow control
 const STATES = {
   MAIN_MENU: "MAIN_MENU",
-  MOBILITY_MENU: "MOBILITY_MENU", 
-  QR_MENU: "QR_MENU",
-  QR_PHONE: "QR_PHONE",
-  QR_CODE: "QR_CODE",
-  QR_AMOUNT_MODE: "QR_AMOUNT_MODE",
-  QR_AMOUNT_INPUT: "QR_AMOUNT_INPUT",
-  QR_GENERATE: "QR_GENERATE",
-  ND_SELECT_TYPE: "ND_SELECT_TYPE",
-  ND_WAIT_LOCATION: "ND_WAIT_LOCATION",
-  ND_CHOOSE_DRIVER: "ND_CHOOSE_DRIVER",
-  AV_USAGE: "AV_USAGE",
-  AV_DOC: "AV_DOC",
-  ST_ROLE: "ST_ROLE",
-  // Insurance states
+  MOBILITY_MENU: "MOBILITY_MENU",
   INS_CHECK_VEHICLE: "INS_CHECK_VEHICLE",
   INS_COLLECT_DOCS: "INS_COLLECT_DOCS",
   INS_CHOOSE_START: "INS_CHOOSE_START",
@@ -68,62 +56,121 @@ const STATES = {
   INS_CHOOSE_ADDONS: "INS_CHOOSE_ADDONS",
   INS_CHOOSE_PA: "INS_CHOOSE_PA",
   INS_SUMMARY: "INS_SUMMARY",
-  INS_QUEUED: "INS_QUEUED",
-  INS_DECIDE: "INS_DECIDE",
-  INS_PAYMENT_PLAN: "INS_PAYMENT_PLAN",
-  INS_AWAIT_PAYMENT: "INS_AWAIT_PAYMENT",
-  INS_ISSUED: "INS_ISSUED"
+  ND_SELECT_TYPE: "ND_SELECT_TYPE",
+  ND_WAIT_LOCATION: "ND_WAIT_LOCATION",
+  ND_CHOOSE_DRIVER: "ND_CHOOSE_DRIVER",
+  ST_ROLE: "ST_ROLE",
+  AV_USAGE: "AV_USAGE",
+  AV_DOC: "AV_DOC",
+  QR_MENU: "QR_MENU",
+  QR_PHONE: "QR_PHONE",
+  QR_CODE: "QR_CODE",
+  QR_AMOUNT_MODE: "QR_AMOUNT_MODE",
+  QR_AMOUNT_INPUT: "QR_AMOUNT_INPUT",
+  QR_GENERATE: "QR_GENERATE"
 } as const;
 
-// User/session management with enhanced error handling
-async function getOrCreateUser(wa_phone: string, wa_name?: string) {
+// User and session management
+async function getOrCreateUser(phone: string, name?: string) {
   try {
-    let { data: profiles } = await sb.from("profiles").select("*").eq("wa_phone", wa_phone).limit(1);
-    
-    if (!profiles?.length) {
-      const { data, error } = await sb.from("profiles").insert({ 
-        wa_phone, 
-        wa_name: wa_name || null
-      }).select("*").single();
-      
-      if (error) throw error;
-      profiles = [data];
+    // Try to find existing user by phone
+    let { data: user } = await sb
+      .from("profiles")
+      .select("*")
+      .eq("wa_phone", phone)
+      .single();
+
+    if (!user) {
+      // Create new user
+      const { data: newUser, error: createError } = await sb
+        .from("profiles")
+        .insert({
+          wa_phone: phone,
+          wa_name: name || "WhatsApp User",
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (createError) throw createError;
+      user = newUser;
+      logger.log("info", "Created new user", { userId: user.id, phone });
     }
-    
-    const user = profiles[0];
-    if (!user) throw new Error("Failed to create or fetch user profile");
-    
-    let { data: sessions } = await sb.from("chat_sessions").select("*").eq("user_id", user.id).limit(1);
-    
-    if (!sessions?.length) {
-      const { data: s2, error } = await sb.from("chat_sessions").insert({ 
-        user_id: user.id,
-        state: STATES.MAIN_MENU 
-      }).select("*").single();
-      
-      if (error) throw error;
-      sessions = [s2];
+
+    // Get or create chat session
+    let { data: session } = await sb
+      .from("chat_sessions")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (!session) {
+      const { data: newSession, error: sessionError } = await sb
+        .from("chat_sessions")
+        .insert({
+          user_id: user.id,
+          state: STATES.MAIN_MENU,
+          context: {},
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (sessionError) throw sessionError;
+      session = newSession;
+      logger.log("info", "Created new chat session", { sessionId: session.id, userId: user.id });
     }
-    
-    return { user, session: sessions[0] as any };
+
+    return { user, session };
   } catch (error) {
-    logger.log("error", "User creation/fetch failed", { wa_phone, error: error.message });
+    logger.log("error", "Failed to get/create user", { error: error.message, phone });
     throw error;
   }
 }
 
-async function setState(sessionId: string, state: string, context: Record<string, unknown> = {}) {
+async function setState(sessionId: string, state: string, context: any = {}) {
   try {
-    const { error } = await sb.from("chat_sessions").update({ state, context }).eq("id", sessionId);
-    if (error) throw error;
-    logger.log("info", "Session state updated", { sessionId, state });
+    await sb
+      .from("chat_sessions")
+      .update({ 
+        state, 
+        context: { ...context, updated_at: new Date().toISOString() },
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", sessionId);
   } catch (error) {
     logger.log("error", "Failed to update session state", { sessionId, state, error: error.message });
     throw error;
   }
 }
 
-// OCR processing using existing edge function
+// Fast-ack media processing - don't block webhook
+async function queueMediaForOCR(mediaId: string, userId: string, usageType: string, from: string) {
+  try {
+    // Send immediate response to user
+    await waClient.sendText(from, "✅ Received your document. Processing...");
+    
+    // Queue OCR job in database
+    await sb.from("vehicle_ocr_jobs").insert({
+      user_id: userId,
+      media_id: mediaId,
+      usage_type: usageType,
+      status: "pending",
+      attempts: 0,
+      created_at: new Date().toISOString()
+    });
+    
+    logger.log("info", "Media queued for OCR", { mediaId, userId, usageType });
+    return { success: true };
+  } catch (error) {
+    logger.log("error", "Failed to queue media for OCR", { mediaId, userId, error: error.message });
+    return { success: false, error: error.message };
+  }
+}
+
+// OCR processing using existing edge function (now async)
 async function processVehicleOCR(mediaId: string, userId: string, usageType: string) {
   try {
     const { bytes, mime } = await waClient.fetchMedia(mediaId);
@@ -219,37 +266,54 @@ async function showQRMenu(to: string) {
   ]);
 }
 
-// Insurance data fetchers
-const fetchPeriods = () => sb.from("insurance_periods").select("*").eq("is_active", true);
-const fetchAddons = () => sb.from("addons").select("*").eq("is_active", true);
-const fetchPA = () => sb.from("pa_categories").select("*").eq("is_active", true);
-
-// Health check endpoint
-async function handleHealthCheck(): Promise<Response> {
+// Insurance data fetching
+async function fetchPeriods() {
   try {
-    const { data, error } = await sb.rpc('health_check');
-    
+    const { data, error } = await sb.from("insurance_periods").select("*").order("days");
     if (error) throw error;
-    
-    return new Response(JSON.stringify({
-      ...data,
-      app_version: APP_VERSION,
+    return { data: data || [] };
+  } catch (error) {
+    logger.log("error", "Failed to fetch insurance periods", { error: error.message });
+    return { data: [] };
+  }
+}
+
+async function fetchAddons() {
+  try {
+    const { data, error } = await sb.from("insurance_addons").select("*");
+    if (error) throw error;
+    return { data: data || [] };
+  } catch (error) {
+    logger.log("error", "Failed to fetch insurance addons", { error: error.message });
+    return { data: [] };
+  }
+}
+
+async function fetchPA() {
+  try {
+    const { data, error } = await sb.from("insurance_pa_categories").select("*");
+    if (error) throw error;
+    return { data: data || [] };
+  } catch (error) {
+    logger.log("error", "Failed to fetch PA categories", { error: error.message });
+    return { data: [] };
+  }
+}
+
+async function handleHealthCheck(): Promise<Response> {
+  return new Response(
+    JSON.stringify({
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+      version: APP_VERSION,
       build_id: BUILD_ID,
       environment: "production"
-    }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" }
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({
-      status: "unhealthy",
-      error: error.message,
-      timestamp: new Date().toISOString()
-    }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
+    }),
+    { 
+      status: 200, 
+      headers: { "Content-Type": "application/json" } 
+    }
+  );
 }
 
 // Main handler with comprehensive error handling
@@ -260,23 +324,26 @@ Deno.serve(async (req) => {
   try {
     const url = new URL(req.url);
     
-    // Health check endpoint
-    if (req.method === "GET" && url.pathname === "/health") {
+    // Health check endpoint - accept on any path
+    if (req.method === "GET" && url.pathname.endsWith("/health")) {
       return await handleHealthCheck();
     }
     
-    // Webhook verification
-    if (req.method === "GET" && url.pathname === "/") {
+    // Webhook verification - accept on ANY path (not just "/")
+    if (req.method === "GET") {
       const mode = url.searchParams.get("hub.mode");
       const token = url.searchParams.get("hub.verify_token");
       const challenge = url.searchParams.get("hub.challenge");
       
       if (mode === "subscribe" && token === WABA_VERIFY) {
-        logger.log("info", "Webhook verification successful", { requestId });
-        return new Response(challenge ?? "", { status: 200 });
+        logger.log("info", "Webhook verification successful", { requestId, path: url.pathname });
+        return new Response(challenge ?? "", { 
+          status: 200, 
+          headers: { "Content-Type": "text/plain" } 
+        });
       }
       
-      logger.log("warn", "Webhook verification failed", { mode, token, requestId });
+      logger.log("warn", "Webhook verification failed", { mode, token, requestId, path: url.pathname });
       return new Response("Verification failed", { status: 403 });
     }
     
@@ -298,518 +365,492 @@ Deno.serve(async (req) => {
       return new Response("Invalid signature", { status: 403 });
     }
     
+    // Global rate limiting check
+    const globalRateLimit = await sb.rpc("check_rate_limit", "global:whatsapp", "whatsapp", 1);
+    if (!globalRateLimit) {
+      logger.log("warn", "Global rate limit exceeded", { requestId });
+      return new Response("Rate limit exceeded", { status: 429 });
+    }
+    
     const body = JSON.parse(bodyText);
-    const entry = body?.entry?.[0];
-    const change = entry?.changes?.[0]?.value;
-    const m = change?.messages?.[0];
-    const contact = change?.contacts?.[0];
     
-    if (!m || !contact) {
-      logger.log("info", "No message or contact in webhook", { requestId });
-      return new Response(JSON.stringify({ ok: true }), { 
-        status: 200, 
-        headers: { "Content-Type": "application/json" } 
-      });
-    }
+    // Process ALL entries and changes (not just [0])
+    const entries = body?.entry || [];
+    let hasProcessedMessage = false;
     
-    // Idempotency check
-    const messageId = m.id;
-    if (await waClient.checkIdempotency(messageId)) {
-      logger.log("info", "Duplicate message ignored", { messageId, requestId });
-      return new Response(JSON.stringify({ status: "duplicate" }), { 
-        status: 200, 
-        headers: { "Content-Type": "application/json" } 
-      });
-    }
-    
-    // Log inbound message
-    try {
-      await sb.from("whatsapp_logs").insert({
-        direction: "in",
-        phone_number: contact.wa_id || "unknown",
-        message_type: m.type || "unknown",
-        message_content: JSON.stringify(m),
-        metadata: { webhook_body: body },
-        status: "received",
-        message_id: messageId,
-        payload: body
-      });
-    } catch (err) {
-      logger.log("error", "Failed to log inbound message", { error: err.message });
-    }
-    
-    const from = `+${contact.wa_id}`;
-    const { user, session } = await getOrCreateUser(from, contact?.profile?.name);
-    const to = contact.wa_id; // Use raw wa_id for WhatsApp API
-    
-    logger.log("info", "Processing message", { 
-      messageId, 
-      messageType: m.type, 
-      userId: user.id, 
-      sessionState: session.state,
-      requestId 
-    });
-    
-    // Interactive message handling
-    const iid = getInteractiveId(m);
-    if (iid) {
-      logger.log("info", "Processing interactive message", { interactiveId: iid, requestId });
+    for (const entry of entries) {
+      const changes = entry?.changes || [];
       
-      // Validate interactive ID
-      if (!isValidFlowId(iid)) {
-        logger.log("warn", "Invalid interactive ID", { interactiveId: iid, requestId });
-        await waClient.sendText(to, "Sorry, I didn't understand that. Let me show you the main menu.");
-        await setState(session.id, STATES.MAIN_MENU, {});
-        await showMainMenu(to);
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      // Main navigation
-      if (iid === "MOBILITY") {
-        await setState(session.id, STATES.MOBILITY_MENU, {});
-        await showMobilityMenu(to);
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (iid === "INSURANCE") {
-        await setState(session.id, STATES.INS_CHECK_VEHICLE, {});
-        // Check for existing vehicle
-        const { data: vs } = await sb.from("vehicles").select("*").eq("user_id", user.id).limit(1);
-        if (!vs?.length) {
-          await setState(session.id, STATES.INS_COLLECT_DOCS, {});
-          await waClient.sendText(to, "Please send:\n1) Carte Jaune (photo/PDF)\n2) Old Insurance (photo/PDF)\nReply 'Agent' for human support.\nSend 'Done' when finished.");
-        } else {
-          await setState(session.id, STATES.INS_CHOOSE_START, { vehicle_id: vs[0].id, plate: vs[0].plate });
-          await waClient.sendButtons(to, `Insurance for ${vs[0].plate ?? 'your vehicle'} — Start date?`, [
-            { id: "START_TODAY", title: "Today" },
-            { id: "START_PICK", title: "Pick date" }
-          ]);
-        }
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (iid === "QR") {
-        await setState(session.id, STATES.QR_MENU, {});
-        await showQRMenu(to);
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (iid === "PROFILE") {
-        await waClient.sendText(to, `Phone: ${user.wa_phone}\nDefault MoMo: ${user.default_momo_phone ?? '—'}\nCode: ${user.default_momo_code ?? '—'}`);
-        await setState(session.id, STATES.MAIN_MENU, {});
-        await showMainMenu(to);
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (iid === "HOME") {
-        await setState(session.id, STATES.MAIN_MENU, {});
-        await showMainMenu(to);
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      // Mobility flows
-      if (iid === "ND") {
-        await setState(session.id, STATES.ND_SELECT_TYPE, {});
-        const { data: types } = await sb.from("vehicle_types").select("*");
-        await waClient.sendList(to, "Choose vehicle type:", (types || []).map((t: any) => ({
-          id: `ND_V_${t.code}`, 
-          title: t.label
-        })), "Vehicle Types", "Nearby");
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (iid === "ST") {
-        await setState(session.id, STATES.ST_ROLE, {});
-        await waClient.sendButtons(to, "Schedule Trip: choose role", [
-          { id: "ST_ROLE_PAX", title: "Passenger" },
-          { id: "ST_ROLE_DRV", title: "Driver" },
-          { id: "MOBILITY", title: "⬅️ Back" }
-        ]);
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (iid === "AV") {
-        await setState(session.id, STATES.AV_USAGE, {});
-        const { data: vtypes } = await sb.from("vehicle_types").select("*");
-        await waClient.sendList(to, "Usage type:", (vtypes || []).map((t: any) => ({
-          id: `AV_U_${t.code}`, 
-          title: t.label
-        })), "Usage Types", "Add Vehicle");
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-
-      if (iid.startsWith("ND_V_")) {
-        const vt = iid.replace("ND_V_", "");
-        await setState(session.id, STATES.ND_WAIT_LOCATION, { nd: { vehicle_type: vt } });
-        await waClient.sendText(to, "Share your pickup location (Attach → Location).");
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (iid.startsWith("AV_U_")) {
-        const usage = iid.replace("AV_U_", "");
-        await setState(session.id, STATES.AV_DOC, { av: { usage_type: usage } });
-        await waClient.sendText(to, "Upload insurance certificate (photo or PDF).");
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-
-      // QR flows
-      if (iid === "QR_PHONE") {
-        await setState(session.id, STATES.QR_PHONE, { qr: { type: "phone" } });
-        if (!user.default_momo_phone) {
-          await waClient.sendText(to, "Enter MoMo phone (07xxxxxxxx or +2507…)");
-        } else {
-          await setState(session.id, STATES.QR_AMOUNT_MODE, { qr: { type: "phone", phone: user.default_momo_phone } });
-          await waClient.sendButtons(to, "Amount mode:", [
-            { id: "QR_AMT_WITH", title: "With amount" },
-            { id: "QR_AMT_NONE", title: "No amount" },
-            { id: "QR", title: "⬅️ Back" }
-          ]);
-        }
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (iid === "QR_CODE") {
-        await setState(session.id, STATES.QR_CODE, { qr: { type: "code" } });
-        if (!user.default_momo_code) {
-          await waClient.sendText(to, "Enter MoMo merchant code (4–9 digits):");
-        } else {
-          await setState(session.id, STATES.QR_AMOUNT_MODE, { qr: { type: "code", code: user.default_momo_code } });
-          await waClient.sendButtons(to, "Amount mode:", [
-            { id: "QR_AMT_WITH", title: "With amount" },
-            { id: "QR_AMT_NONE", title: "No amount" },
-            { id: "QR", title: "⬅️ Back" }
-          ]);
-        }
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (iid === "QR_AMT_WITH") {
-        await setState(session.id, STATES.QR_AMOUNT_INPUT, { qr: { ...(session.context as any).qr } });
-        await waClient.sendList(to, "Quick pick:", [
-          { id: "QR_A_1000", title: "1,000" },
-          { id: "QR_A_2000", title: "2,000" },
-          { id: "QR_A_5000", title: "5,000" },
-          { id: "QR_A_OTHER", title: "Other amount" }
-        ], "Amounts", "Pick amount");
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (iid === "QR_AMT_NONE") {
-        const ctx = session.context as any;
-        ctx.qr = { ...(ctx.qr || {}), amount: null };
-        await setState(session.id, STATES.QR_GENERATE, ctx);
-        await generateAndSendQR(to, session.user_id, ctx);
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (["QR_A_1000", "QR_A_2000", "QR_A_5000"].includes(iid)) {
-        const amt = iid === "QR_A_1000" ? 1000 : iid === "QR_A_2000" ? 2000 : 5000;
-        const ctx = session.context as any;
-        ctx.qr = { ...(ctx.qr || {}), amount: amt };
-        await setState(session.id, STATES.QR_GENERATE, ctx);
-        await generateAndSendQR(to, session.user_id, ctx);
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (iid === "QR_A_OTHER") {
-        await waClient.sendText(to, "Enter amount (>0):");
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (iid === "QR_AGAIN") {
-        await showQRMenu(to);
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (iid === "QR_CHANGE_DEFAULT") {
-        const ctx = session.context as any;
-        if (ctx.qr?.type === "phone") {
-          await setState(session.id, STATES.QR_PHONE, { qr: { type: "phone" } });
-          await waClient.sendText(to, "Enter new default MoMo phone:");
-        } else {
-          await setState(session.id, STATES.QR_CODE, { qr: { type: "code" } });
-          await waClient.sendText(to, "Enter new default MoMo code (4–9 digits):");
-        }
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-
-      // Insurance flows
-      if (session.state === STATES.INS_CHOOSE_START) {
-        if (iid === "START_TODAY") {
-          const ctx = { ...(session.context || {}), start_date: new Date().toISOString().slice(0, 10) };
-          await setState(session.id, STATES.INS_CHOOSE_PERIOD, ctx);
-          const { data: periods = [] } = await fetchPeriods();
-          await waClient.sendList(to, "Choose duration", periods.map((p: any) => ({
-            id: `PERIOD_${p.id}`, 
-            title: p.label, 
-            description: `${p.days} days`
-          })), "Period", "Available");
-          return new Response(JSON.stringify({ ok: true }), { 
-            status: 200, 
-            headers: { "Content-Type": "application/json" } 
-          });
-        }
-        if (iid === "START_PICK") {
-          await waClient.sendText(to, "Send date as YYYY-MM-DD:");
-          return new Response(JSON.stringify({ ok: true }), { 
-            status: 200, 
-            headers: { "Content-Type": "application/json" } 
-          });
-        }
-      }
-      
-      if (session.state === STATES.INS_CHOOSE_PERIOD && iid.startsWith("PERIOD_")) {
-        const ctx = { ...(session.context || {}), period_id: iid.replace("PERIOD_", "") };
-        await setState(session.id, STATES.INS_CHOOSE_ADDONS, ctx);
-        const { data: addons = [] } = await fetchAddons();
-        await waClient.sendList(to, "Pick add-ons (send 'Done' to continue)", addons.map((a: any) => ({
-          id: `ADDON_${a.id}`, 
-          title: a.label, 
-          description: a.code
-        })), "Add-ons", "Available");
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-    }
-    
-    // Text input handling for various states
-    if (m?.text?.body) {
-      const t = m.text.body.trim();
-      
-      if (session.state === STATES.QR_PHONE) {
-        const phone = normalizePhone(t);
-        await sb.from("profiles").update({ default_momo_phone: phone }).eq("id", user.id);
-        await setState(session.id, STATES.QR_AMOUNT_MODE, { qr: { type: "phone", phone } });
-        await waClient.sendButtons(to, "Amount mode:", [
-          { id: "QR_AMT_WITH", title: "With amount" },
-          { id: "QR_AMT_NONE", title: "No amount" },
-          { id: "QR", title: "⬅️ Back" }
-        ]);
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (session.state === STATES.QR_CODE) {
-        if (!/^\d{4,9}$/.test(t)) {
-          await waClient.sendText(to, "Invalid code. Enter 4–9 digits:");
-          return new Response(JSON.stringify({ ok: true }), { 
-            status: 200, 
-            headers: { "Content-Type": "application/json" } 
-          });
-        }
-        await sb.from("profiles").update({ default_momo_code: t }).eq("id", user.id);
-        await setState(session.id, STATES.QR_AMOUNT_MODE, { qr: { type: "code", code: t } });
-        await waClient.sendButtons(to, "Amount mode:", [
-          { id: "QR_AMT_WITH", title: "With amount" },
-          { id: "QR_AMT_NONE", title: "No amount" },
-          { id: "QR", title: "⬅️ Back" }
-        ]);
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (session.state === STATES.QR_AMOUNT_INPUT) {
-        const amt = parseInt(t.replace(/[^\d]/g, ''), 10);
-        if (!amt || amt <= 0) {
-          await waClient.sendText(to, "Amount must be > 0. Enter again:");
-          return new Response(JSON.stringify({ ok: true }), { 
-            status: 200, 
-            headers: { "Content-Type": "application/json" } 
-          });
-        }
-        const ctx = (await sb.from("chat_sessions").select("context").eq("id", session.id).single()).data!.context as any;
-        ctx.qr = { ...(ctx.qr || {}), amount: amt };
-        await setState(session.id, STATES.QR_GENERATE, ctx);
-        await generateAndSendQR(to, session.user_id, ctx);
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (session.state === STATES.INS_COLLECT_DOCS) {
-        if (t.toLowerCase() === "agent") {
-          await waClient.sendText(to, "A human agent will join shortly. Please describe the issue.");
-          return new Response(JSON.stringify({ ok: true }), { 
-            status: 200, 
-            headers: { "Content-Type": "application/json" } 
-          });
-        }
-        if (t.toLowerCase() === "done") {
-          await setState(session.id, STATES.INS_CHOOSE_START, {});
-          await waClient.sendButtons(to, "Start date?", [
-            { id: "START_TODAY", title: "Today" },
-            { id: "START_PICK", title: "Pick date" }
-          ]);
-          return new Response(JSON.stringify({ ok: true }), { 
-            status: 200, 
-            headers: { "Content-Type": "application/json" } 
-          });
-        }
-      }
-      
-      if (session.state === STATES.INS_CHOOSE_START && /^\d{4}-\d{2}-\d{2}$/.test(t)) {
-        const ctx = { ...(session.context || {}), start_date: t };
-        await setState(session.id, STATES.INS_CHOOSE_PERIOD, ctx);
-        const { data: periods = [] } = await fetchPeriods();
-        await waClient.sendList(to, "Choose duration", periods.map((p: any) => ({
-          id: `PERIOD_${p.id}`, 
-          title: p.label, 
-          description: `${p.days} days`
-        })), "Period", "Available");
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      if (session.state === STATES.INS_CHOOSE_ADDONS && t.toLowerCase() === "done") {
-        const c = session.context as any;
-        const { data: ads = [] } = await fetchAddons();
-        const pa = ads.find((a: any) => a.code?.toLowerCase() === 'pa');
-        if (pa && c.addons?.includes(pa.id)) {
-          await setState(session.id, STATES.INS_CHOOSE_PA, c);
-          const { data: cats = [] } = await fetchPA();
-          await waClient.sendList(to, "Personal Accident category", cats.map((p: any) => ({
-            id: `PA_${p.id}`, 
-            title: p.label
-          })), "PA", "Categories");
-        } else {
-          await setState(session.id, STATES.INS_SUMMARY, c);
-          await waClient.sendButtons(to, "Summary → Continue?", [
-            { id: "SUM_CONTINUE", title: "Continue" },
-            { id: "CANCEL", title: "Cancel" }
-          ]);
-        }
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-    }
-
-    // Handle non-interactive messages (location, media, text)
-    if (m?.location && session.state === STATES.ND_WAIT_LOCATION) {
-      const p = { lat: m.location.latitude, lng: m.location.longitude };
-      const { data: drivers = [], error } = await sb.rpc("nearby_drivers_optimized", { 
-        lat: p.lat, 
-        lng: p.lng, 
-        km: 15 
-      });
-      
-      if (error || !drivers.length) {
-        await waClient.sendText(to, "No drivers nearby right now. Try again later.");
-        await setState(session.id, STATES.MOBILITY_MENU, {});
-        await showMobilityMenu(to);
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
-      }
-      
-      const rows = drivers.map((d: any, i: number) => ({
-        id: `ND_BOOK_${d.driver_id}`,
-        title: `#${i + 1} ${d.wa_name || 'Driver'} — ${d.distance_km.toFixed(1)} km`
-      }));
-      
-      await setState(session.id, STATES.ND_CHOOSE_DRIVER, { nd: { pickup: p, drivers } });
-      await waClient.sendList(to, "Top-10 nearby drivers:", rows, "Drivers", "Nearby");
-      return new Response(JSON.stringify({ ok: true }), { 
-        status: 200, 
-        headers: { "Content-Type": "application/json" } 
-      });
-    }
-    
-    // Media handling for vehicle documents
-    if ((m?.image || m?.document) && session.state === STATES.AV_DOC) {
-      const mediaId = m.image?.id || m.document?.id;
-      if (mediaId) {
-        const ctx = session.context as any;
-        const usageType = ctx.av?.usage_type;
+      for (const change of changes) {
+        const messages = change?.value?.messages || [];
+        const contacts = change?.value?.contacts || [];
         
-        const result = await processVehicleOCR(mediaId, user.id, usageType);
-        
-        if (!result.success) {
-          await waClient.sendText(to, `Error processing document: ${result.error}. Please try again or contact support.`);
-        } else {
-          await setState(session.id, STATES.MOBILITY_MENU, {});
-          await waClient.sendText(to, `Vehicle saved: ${result.data?.plate ?? '(no plate parsed)'}\nVerification pending.`);
-          await showMobilityMenu(to);
+        // Process each message
+        for (const m of messages) {
+          const contact = contacts.find((c: any) => c.wa_id === m.from);
+          
+          if (!m || !contact) {
+            logger.log("info", "Skipping message without contact", { requestId, messageId: m?.id });
+            continue;
+          }
+          
+          // Idempotency check using inbound_events table
+          const messageId = m.id;
+          const { data: isNewEvent } = await sb.rpc("check_and_insert_inbound_event", 
+            messageId, 
+            contact.wa_id || "unknown", 
+            m.type || "unknown", 
+            { message: m, contact: contact }
+          );
+          
+          if (!isNewEvent) {
+            logger.log("info", "Duplicate message ignored", { messageId, requestId });
+            continue;
+          }
+          
+          // Log inbound message
+          try {
+            await sb.from("whatsapp_logs").insert({
+              direction: "in",
+              phone_number: contact.wa_id || "unknown",
+              message_type: m.type || "unknown",
+              message_content: JSON.stringify(m),
+              metadata: { webhook_body: body, request_id: requestId },
+              status: "received",
+              message_id: messageId,
+              payload: body
+            });
+            
+            // Record metrics
+            await sb.rpc("increment_metric", "whatsapp.messages_received", 1, {
+              direction: "inbound",
+              message_type: m.type || "unknown",
+              user_id: user?.id
+            });
+          } catch (err) {
+            logger.log("error", "Failed to log inbound message", { error: err.message });
+          }
+          
+          const from = `+${contact.wa_id}`;
+          const { user, session } = await getOrCreateUser(from, contact?.profile?.name);
+          const to = contact.wa_id; // Use raw wa_id for WhatsApp API
+          
+          // Per-user rate limiting check
+          const userRateLimit = await sb.rpc("check_rate_limit", `user:${user.id}`, "whatsapp", 1);
+          if (!userRateLimit) {
+            logger.log("warn", "User rate limit exceeded", { userId: user.id, requestId });
+            await waClient.sendText(to, "You're sending messages too quickly. Please wait a moment before sending another message.");
+            continue;
+          }
+          
+          logger.log("info", "Processing message", { 
+            messageId, 
+            messageType: m.type, 
+            userId: user.id, 
+            sessionState: session.state,
+            requestId 
+          });
+          
+          // Interactive message handling
+          const iid = getInteractiveId(m);
+          if (iid) {
+            logger.log("info", "Processing interactive message", { interactiveId: iid, requestId });
+            
+            // Validate interactive ID
+            if (!isValidFlowId(iid)) {
+              logger.log("warn", "Invalid interactive ID", { interactiveId: iid, requestId });
+              await waClient.sendText(to, "Sorry, I didn't understand that. Let me show you the main menu.");
+              await setState(session.id, STATES.MAIN_MENU, {});
+              await showMainMenu(to);
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            // Main navigation
+            if (iid === "MOBILITY") {
+              await setState(session.id, STATES.MOBILITY_MENU, {});
+              await showMobilityMenu(to);
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (iid === "INSURANCE") {
+              await setState(session.id, STATES.INS_CHECK_VEHICLE, {});
+              // Check for existing vehicle
+              const { data: vs } = await sb.from("vehicles").select("*").eq("user_id", user.id).limit(1);
+              if (!vs?.length) {
+                await setState(session.id, STATES.INS_COLLECT_DOCS, {});
+                await waClient.sendText(to, "Please send:\n1) Carte Jaune (photo/PDF)\n2) Old Insurance (photo/PDF)\nReply 'Agent' for human support.\nSend 'Done' when finished.");
+              } else {
+                await setState(session.id, STATES.INS_CHOOSE_START, { vehicle_id: vs[0].id, plate: vs[0].plate });
+                await waClient.sendButtons(to, `Insurance for ${vs[0].plate ?? 'your vehicle'} — Start date?`, [
+                  { id: "START_TODAY", title: "Today" },
+                  { id: "START_PICK", title: "Pick date" }
+                ]);
+              }
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (iid === "QR") {
+              await setState(session.id, STATES.QR_MENU, {});
+              await showQRMenu(to);
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (iid === "PROFILE") {
+              await waClient.sendText(to, `Phone: ${user.wa_phone}\nDefault MoMo: ${user.default_momo_phone ?? '—'}\nCode: ${user.default_momo_code ?? '—'}`);
+              await setState(session.id, STATES.MAIN_MENU, {});
+              await showMainMenu(to);
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (iid === "HOME") {
+              await setState(session.id, STATES.MAIN_MENU, {});
+              await showMainMenu(to);
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            // Mobility flows
+            if (iid === "ND") {
+              await setState(session.id, STATES.ND_SELECT_TYPE, {});
+              const { data: types } = await sb.from("vehicle_types").select("*");
+              await waClient.sendList(to, "Choose vehicle type:", (types || []).map((t: any) => ({
+                id: `ND_V_${t.code}`, 
+                title: t.label
+              })), "Vehicle Types", "Nearby");
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (iid === "ST") {
+              await setState(session.id, STATES.ST_ROLE, {});
+              await waClient.sendButtons(to, "Schedule Trip: choose role", [
+                { id: "ST_ROLE_PAX", title: "Passenger" },
+                { id: "ST_ROLE_DRV", title: "Driver" },
+                { id: "MOBILITY", title: "⬅️ Back" }
+              ]);
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (iid === "AV") {
+              await setState(session.id, STATES.AV_USAGE, {});
+              const { data: vtypes } = await sb.from("vehicle_types").select("*");
+              await waClient.sendList(to, "Usage type:", (vtypes || []).map((t: any) => ({
+                id: `AV_U_${t.code}`, 
+                title: t.label
+              })), "Usage Types", "Add Vehicle");
+              hasProcessedMessage = true;
+              continue;
+            }
+
+            if (iid.startsWith("ND_V_")) {
+              const vt = iid.replace("ND_V_", "");
+              await setState(session.id, STATES.ND_WAIT_LOCATION, { nd: { vehicle_type: vt } });
+              await waClient.sendText(to, "Share your pickup location (Attach → Location).");
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (iid.startsWith("AV_U_")) {
+              const usage = iid.replace("AV_U_", "");
+              await setState(session.id, STATES.AV_DOC, { av: { usage_type: usage } });
+              await waClient.sendText(to, "Upload insurance certificate (photo or PDF).");
+              hasProcessedMessage = true;
+              continue;
+            }
+
+            // QR flows
+            if (iid === "QR_PHONE") {
+              await setState(session.id, STATES.QR_PHONE, { qr: { type: "phone" } });
+              if (!user.default_momo_phone) {
+                await waClient.sendText(to, "Enter MoMo phone (07xxxxxxxx or +2507…)");
+              } else {
+                await setState(session.id, STATES.QR_AMOUNT_MODE, { qr: { type: "phone", phone: user.default_momo_phone } });
+                await waClient.sendButtons(to, "Amount mode:", [
+                  { id: "QR_AMT_WITH", title: "With amount" },
+                  { id: "QR_AMT_NONE", title: "No amount" },
+                  { id: "QR", title: "⬅️ Back" }
+                ]);
+              }
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (iid === "QR_CODE") {
+              await setState(session.id, STATES.QR_CODE, { qr: { type: "code" } });
+              if (!user.default_momo_code) {
+                await waClient.sendText(to, "Enter MoMo merchant code (4–9 digits):");
+              } else {
+                await setState(session.id, STATES.QR_AMOUNT_MODE, { qr: { type: "code", code: user.default_momo_code } });
+                await waClient.sendButtons(to, "Amount mode:", [
+                  { id: "QR_AMT_WITH", title: "With amount" },
+                  { id: "QR_AMT_NONE", title: "No amount" },
+                  { id: "QR", title: "⬅️ Back" }
+                ]);
+              }
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (iid === "QR_AMT_WITH") {
+              await setState(session.id, STATES.QR_AMOUNT_INPUT, { qr: { ...(session.context as any).qr } });
+              await waClient.sendList(to, "Quick pick:", [
+                { id: "QR_A_1000", title: "1,000" },
+                { id: "QR_A_2000", title: "2,000" },
+                { id: "QR_A_5000", title: "5,000" },
+                { id: "QR_A_OTHER", title: "Other amount" }
+              ], "Amounts", "Pick amount");
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (iid === "QR_AMT_NONE") {
+              const ctx = session.context as any;
+              ctx.qr = { ...(ctx.qr || {}), amount: null };
+              await setState(session.id, STATES.QR_GENERATE, ctx);
+              await generateAndSendQR(to, session.user_id, ctx);
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (["QR_A_1000", "QR_A_2000", "QR_A_5000"].includes(iid)) {
+              const amt = iid === "QR_A_1000" ? 1000 : iid === "QR_A_2000" ? 2000 : 5000;
+              const ctx = session.context as any;
+              ctx.qr = { ...(ctx.qr || {}), amount: amt };
+              await setState(session.id, STATES.QR_GENERATE, ctx);
+              await generateAndSendQR(to, session.user_id, ctx);
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (iid === "QR_A_OTHER") {
+              await waClient.sendText(to, "Enter amount (>0):");
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (iid === "QR_AGAIN") {
+              await showQRMenu(to);
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (iid === "QR_CHANGE_DEFAULT") {
+              const ctx = session.context as any;
+              if (ctx.qr?.type === "phone") {
+                await setState(session.id, STATES.QR_PHONE, { qr: { type: "phone" } });
+                await waClient.sendText(to, "Enter new default MoMo phone:");
+              } else {
+                await setState(session.id, STATES.QR_CODE, { qr: { type: "code" } });
+                await waClient.sendText(to, "Enter new default MoMo code (4–9 digits):");
+              }
+              hasProcessedMessage = true;
+              continue;
+            }
+
+            // Insurance flows
+            if (session.state === STATES.INS_CHOOSE_START) {
+              if (iid === "START_TODAY") {
+                const ctx = { ...(session.context || {}), start_date: new Date().toISOString().slice(0, 10) };
+                await setState(session.id, STATES.INS_CHOOSE_PERIOD, ctx);
+                const { data: periods = [] } = await fetchPeriods();
+                await waClient.sendList(to, "Choose duration", periods.map((p: any) => ({
+                  id: `PERIOD_${p.id}`, 
+                  title: p.label, 
+                  description: `${p.days} days`
+                })), "Period", "Available");
+                hasProcessedMessage = true;
+                continue;
+              }
+              if (iid === "START_PICK") {
+                await waClient.sendText(to, "Send date as YYYY-MM-DD:");
+                hasProcessedMessage = true;
+                continue;
+              }
+            }
+            
+            if (session.state === STATES.INS_CHOOSE_PERIOD && iid.startsWith("PERIOD_")) {
+              const ctx = { ...(session.context || {}), period_id: iid.replace("PERIOD_", "") };
+              await setState(session.id, STATES.INS_CHOOSE_ADDONS, ctx);
+              const { data: addons = [] } = await fetchAddons();
+              await waClient.sendList(to, "Pick add-ons (send 'Done' to continue)", addons.map((a: any) => ({
+                id: `ADDON_${a.id}`, 
+                title: a.label, 
+                description: a.code
+              })), "Add-ons", "Available");
+              hasProcessedMessage = true;
+              continue;
+            }
+          }
+          
+          // Text input handling for various states
+          if (m?.text?.body) {
+            const t = m.text.body.trim();
+            
+            if (session.state === STATES.QR_PHONE) {
+              const phone = normalizePhone(t);
+              await sb.from("profiles").update({ default_momo_phone: phone }).eq("id", user.id);
+              await setState(session.id, STATES.QR_AMOUNT_MODE, { qr: { type: "phone", phone } });
+              await waClient.sendButtons(to, "Amount mode:", [
+                { id: "QR_AMT_WITH", title: "With amount" },
+                { id: "QR_AMT_NONE", title: "No amount" },
+                { id: "QR", title: "⬅️ Back" }
+              ]);
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (session.state === STATES.QR_CODE) {
+              if (!/^\d{4,9}$/.test(t)) {
+                await waClient.sendText(to, "Invalid code. Enter 4–9 digits:");
+                hasProcessedMessage = true;
+                continue;
+              }
+              await sb.from("profiles").update({ default_momo_code: t }).eq("id", user.id);
+              await setState(session.id, STATES.QR_AMOUNT_MODE, { qr: { type: "code", code: t } });
+              await waClient.sendButtons(to, "Amount mode:", [
+                { id: "QR_AMT_WITH", title: "With amount" },
+                { id: "QR_AMT_NONE", title: "No amount" },
+                { id: "QR", title: "⬅️ Back" }
+              ]);
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (session.state === STATES.QR_AMOUNT_INPUT) {
+              const amt = parseInt(t.replace(/[^\d]/g, ''), 10);
+              if (!amt || amt <= 0) {
+                await waClient.sendText(to, "Amount must be > 0. Enter again:");
+                hasProcessedMessage = true;
+                continue;
+              }
+              const ctx = (await sb.from("chat_sessions").select("context").eq("id", session.id).single()).data!.context as any;
+              ctx.qr = { ...(ctx.qr || {}), amount: amt };
+              await setState(session.id, STATES.QR_GENERATE, ctx);
+              await generateAndSendQR(to, session.user_id, ctx);
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (session.state === STATES.INS_COLLECT_DOCS) {
+              if (t.toLowerCase() === "agent") {
+                await waClient.sendText(to, "A human agent will join shortly. Please describe the issue.");
+                hasProcessedMessage = true;
+                continue;
+              }
+              if (t.toLowerCase() === "done") {
+                await setState(session.id, STATES.INS_CHOOSE_START, {});
+                await waClient.sendButtons(to, "Start date?", [
+                  { id: "START_TODAY", title: "Today" },
+                  { id: "START_PICK", title: "Pick date" }
+                ]);
+                hasProcessedMessage = true;
+                continue;
+              }
+            }
+            
+            if (session.state === STATES.INS_CHOOSE_START && /^\d{4}-\d{2}-\d{2}$/.test(t)) {
+              const ctx = { ...(session.context || {}), start_date: t };
+              await setState(session.id, STATES.INS_CHOOSE_PERIOD, ctx);
+              const { data: periods = [] } = await fetchPeriods();
+              await waClient.sendList(to, "Choose duration", periods.map((p: any) => ({
+                id: `PERIOD_${p.id}`, 
+                title: p.label, 
+                description: `${p.days} days`
+              })), "Period", "Available");
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            if (session.state === STATES.INS_CHOOSE_ADDONS && t.toLowerCase() === "done") {
+              const c = session.context as any;
+              const { data: ads = [] } = await fetchAddons();
+              const pa = ads.find((a: any) => a.code?.toLowerCase() === 'pa');
+              if (pa && c.addons?.includes(pa.id)) {
+                await setState(session.id, STATES.INS_CHOOSE_PA, c);
+                const { data: cats = [] } = fetchPA();
+                await waClient.sendList(to, "Personal Accident category", cats.map((p: any) => ({
+                  id: `PA_${p.id}`, 
+                  title: p.label
+                })), "PA", "Categories");
+              } else {
+                await setState(session.id, STATES.INS_SUMMARY, c);
+                await waClient.sendButtons(to, "Summary → Continue?", [
+                  { id: "SUM_CONTINUE", title: "Continue" },
+                  { id: "CANCEL", title: "Cancel" }
+                ]);
+              }
+              hasProcessedMessage = true;
+              continue;
+            }
+            
+            // FALLBACK: Any text message in unknown state gets main menu
+            if (!hasProcessedMessage) {
+              logger.log("info", "Text message in unknown state, showing main menu", { 
+                text: t.substring(0, 50), 
+                state: session.state, 
+                requestId 
+              });
+              await setState(session.id, STATES.MAIN_MENU, {});
+              await showMainMenu(to);
+              hasProcessedMessage = true;
+              continue;
+            }
+          }
+
+          // Handle non-interactive messages (location, media, text)
+          if (m?.location && session.state === STATES.ND_WAIT_LOCATION) {
+            const p = { lat: m.location.latitude, lng: m.location.longitude };
+            const { data: drivers = [], error } = await sb.rpc("nearby_drivers_optimized", { 
+              lat: p.lat, 
+              lng: p.lng, 
+              km: 15 
+            });
+            
+            if (error || !drivers.length) {
+              await waClient.sendText(to, "No drivers nearby right now. Try again later.");
+              await setState(session.id, STATES.MOBILITY_MENU, {});
+              await showMobilityMenu(to);
+            } else {
+              const rows = drivers.map((d: any, i: number) => ({
+                id: `ND_BOOK_${d.driver_id}`,
+                title: `#${i + 1} ${d.wa_name || 'Driver'} — ${d.distance_km.toFixed(1)} km`
+              }));
+              
+              await setState(session.id, STATES.ND_CHOOSE_DRIVER, { nd: { pickup: p, drivers } });
+              await waClient.sendList(to, "Top-10 nearby drivers:", rows, "Drivers", "Nearby");
+            }
+            hasProcessedMessage = true;
+            continue;
+          }
+          
+          // Media handling for vehicle documents - FAST ACK
+          if ((m?.image || m?.document) && session.state === STATES.AV_DOC) {
+            const mediaId = m.image?.id || m.document?.id;
+            if (mediaId) {
+              const ctx = session.context as any;
+              const usageType = ctx.av?.usage_type;
+              
+              // Queue for async processing - don't block webhook
+              await queueMediaForOCR(mediaId, user.id, usageType, to);
+              hasProcessedMessage = true;
+              continue;
+            }
+          }
         }
-        return new Response(JSON.stringify({ ok: true }), { 
-          status: 200, 
-          headers: { "Content-Type": "application/json" } 
-        });
       }
     }
     
-    // Fallback to main menu for unhandled cases
-    logger.log("info", "Unhandled message type, showing main menu", { messageType: m.type, requestId });
-    await setState(session.id, STATES.MAIN_MENU, {});
-    await showMainMenu(to);
+    // If no messages were processed, return success anyway
+    if (!hasProcessedMessage) {
+      logger.log("info", "No actionable messages in webhook", { requestId });
+    }
+    
     return new Response(JSON.stringify({ ok: true }), { 
       status: 200, 
       headers: { "Content-Type": "application/json" } 

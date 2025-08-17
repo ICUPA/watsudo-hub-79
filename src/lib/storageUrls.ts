@@ -1,13 +1,38 @@
-// Storage URL utilities for consistent file access across the app
+// Storage URL utilities for Supabase
+// Environment variables for Supabase configuration
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-interface StorageConfig {
-  supabaseUrl: string;
-  supabaseKey: string;
+// Validate required environment variables
+if (!supabaseUrl) {
+  throw new Error("Missing VITE_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL environment variable");
 }
 
-const config: StorageConfig = {
-  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || "https://lgicrnzvnbmsnxhzytro.supabase.co",
-  supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxnaWNybnp2bmJtc254aHp5dHJvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTUyMDg5MDgsImV4cCI6MjA3MDc4NDkwOH0.org4HqULlkLKD4ZPKtUD9aFGxNxuLRm82n-y6USJVfs"
+if (!supabaseKey) {
+  throw new Error("Missing VITE_SUPABASE_ANON_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable");
+}
+
+export const storageUrls = {
+  supabaseUrl,
+  supabaseKey,
+  
+  // Helper function to get storage URL for a bucket and path
+  getStorageUrl: (bucket: string, path: string): string => {
+    return `${supabaseUrl}/storage/v1/object/public/${bucket}/${path}`;
+  },
+  
+  // Helper function to get signed URL for private files
+  getSignedUrl: async (bucket: string, path: string, expiresIn: number = 3600): Promise<string | null> => {
+    try {
+      // This would need to be implemented with the Supabase client
+      // For now, return null to indicate this needs to be implemented
+      console.warn("getSignedUrl not implemented - requires Supabase client");
+      return null;
+    } catch (error) {
+      console.error("Error generating signed URL:", error);
+      return null;
+    }
+  }
 };
 
 // Canonical bucket names
@@ -22,7 +47,7 @@ export const BUCKETS = {
  * Generate public URL for public buckets (qr)
  */
 export function getPublicUrl(bucket: string, path: string): string {
-  return `${config.supabaseUrl}/storage/v1/object/public/${bucket}/${path}`;
+  return `${supabaseUrl}/storage/v1/object/public/${bucket}/${path}`;
 }
 
 /**
@@ -36,11 +61,11 @@ export async function getSignedUrl(
 ): Promise<{ signedUrl: string; error?: string }> {
   try {
     const response = await fetch(
-      `${config.supabaseUrl}/storage/v1/object/sign/${bucket}/${path}?expiresIn=${expiresIn}`,
+      `${supabaseUrl}/storage/v1/object/sign/${bucket}/${path}?expiresIn=${expiresIn}`,
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${config.supabaseKey}`,
+          'Authorization': `Bearer ${supabaseKey}`,
           'Content-Type': 'application/json'
         }
       }
@@ -69,7 +94,7 @@ export function getStorageUrl(bucket: string, path: string): string {
   }
   
   // For private buckets, return the base URL that can be signed server-side
-  return `${config.supabaseUrl}/storage/v1/object/${bucket}/${path}`;
+  return `${supabaseUrl}/storage/v1/object/${bucket}/${path}`;
 }
 
 /**
