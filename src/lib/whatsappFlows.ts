@@ -328,7 +328,7 @@ export class ScheduleTripFlowHandler extends BaseFlowHandler {
       
       if (role === 'ST_PASSENGER' || role === 'ST_DRIVER') {
         const newState = STATES.ST_PICKUP;
-        const context = { role: (role === 'ST_PASSENGER' ? 'passenger' : 'driver') as 'passenger' | 'driver' };
+        const context = { role: role === 'ST_PASSENGER' ? 'passenger' : 'driver' };
         
         await this.updateSessionState(session.id, newState, context);
         

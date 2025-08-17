@@ -363,7 +363,7 @@ export class StateMachine {
 
   // Check if state is safe for recovery
   private isSafeState(state: StateType): boolean {
-    const safeStates: StateType[] = [
+    const safeStates = [
       STATES.HOME,
       STATES.MAIN_MENU,
       STATES.MOBILITY,
