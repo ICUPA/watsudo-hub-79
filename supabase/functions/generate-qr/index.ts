@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.223.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { normalizePhone, buildUSSD, buildTelLink } from "../_shared/wa.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -29,41 +30,23 @@ serve(async (req) => {
 
     console.log('Generating QR code:', { type, identifier, amount, user_id });
 
-    // Normalize phone number to local format (remove +250 if present)
-    const localNumber = identifier.startsWith("+250") ? `0${identifier.slice(4)}` : identifier;
-    
-    const ussd = type === "phone"
-      ? amount 
-        ? `*182*1*1*${localNumber}*${amount}#`
-        : `*182*1*1*${localNumber}#`
-      : amount
-        ? `*182*8*1*${identifier}*${amount}#`
-        : `*182*8*1*${identifier}#`;
-    
-    // Create tel: link for USSD launcher
-    const telLink = `tel:${ussd.replace(/#/g, '%23')}`;
+    // Build USSD code and tel: link
+    const phone = type === "phone" ? normalizePhone(identifier) : identifier;
+    const ussd = buildUSSD(type, phone, amount);
+    const telLink = buildTelLink(ussd);
     
     // Generate QR code using QR Server API
-    const qrSize = "300x300";
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}&data=${encodeURIComponent(telLink)}`;
-    
-    const qrResponse = await fetch(qrUrl);
-    if (!qrResponse.ok) {
-      throw new Error('Failed to generate QR code');
-    }
-    
-    const qrBlob = await qrResponse.blob();
-    const qrArrayBuffer = await qrBlob.arrayBuffer();
-    const qrUint8Array = new Uint8Array(qrArrayBuffer);
-    
-    // Upload to Supabase Storage
+    // Generate QR code image from public API
+    const apiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(telLink)}`;
+    const qrRes = await fetch(apiUrl);
+    if (!qrRes.ok) throw new Error('Failed to generate QR code');
+    const bytes = new Uint8Array(await qrRes.arrayBuffer());
+
+    // Upload to canonical public bucket 'qr'
     const fileName = `qr-${type}-${Date.now()}.png`;
     const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('qr-codes')
-      .upload(fileName, qrUint8Array, {
-        contentType: 'image/png',
-        upsert: false
-      });
+      .from('qr')
+      .upload(fileName, bytes, { contentType: 'image/png' });
 
     if (uploadError) {
       console.error('Upload error:', uploadError);
@@ -89,9 +72,9 @@ serve(async (req) => {
       throw new Error('Failed to save QR generation record');
     }
 
-    // Get public URL for the uploaded file
+    // Build public URL for the uploaded file
     const { data: { publicUrl } } = supabase.storage
-      .from('qr-codes')
+      .from('qr')
       .getPublicUrl(uploadData.path);
 
     return new Response(

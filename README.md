@@ -72,11 +72,11 @@ Legacy `WHATSAPP_*` variables are supported as fallbacks.
 ## 🧪 Testing
 
 ```bash
-# Frontend tests
+# Frontend tests (Vitest)
 npm test
 
-# Edge function tests  
-deno test --allow-all supabase/functions/
+# Edge function tests (Deno)
+# deno test --allow-net=false --allow-read=false supabase/functions/**/*.ts
 
 # Linting
 npm run lint
