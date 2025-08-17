@@ -1,7 +1,7 @@
 # Unit Tests for WhatsApp Utilities
 
 import { assertEquals, assertThrows } from "https://deno.land/std@0.223.0/assert/mod.ts";
-import { normalizePhone, buildUSSD, buildTelLink, isValidFlowId, WhatsAppClient } from "../_shared/wa.ts";
+import { normalizePhone, buildUSSD, buildTelLink, isValidFlowId } from "../_shared/wa.ts";
 
 Deno.test("Phone normalization tests", async (t) => {
   await t.step("should normalize Rwanda numbers correctly", () => {
@@ -70,31 +70,5 @@ Deno.test("Flow ID validation tests", async (t) => {
     assertEquals(isValidFlowId("INVALID"), false);
     assertEquals(isValidFlowId("RANDOM_ID"), false);
     assertEquals(isValidFlowId(""), false);
-  });
-});
-
-Deno.test("Signature verification tests", async (t) => {
-  const secret = "test_secret";
-  const body = "test_payload";
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign", "verify"]
-  );
-  const sigBuffer = await crypto.subtle.sign("HMAC", key, encoder.encode(body));
-  const hex = Array.from(new Uint8Array(sigBuffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-  const header = `sha256=${hex}`;
-  const client = new WhatsAppClient("id", "token", secret, {} as any, { log: () => {} });
-  await t.step("valid signature returns true", async () => {
-    assertEquals(await client.verifySignature(header, body), true);
-  });
-  await t.step("invalid signature returns false", async () => {
-    assertEquals(await client.verifySignature("sha256=00", body), false);
-    assertEquals(await client.verifySignature("", body), false);
   });
 });

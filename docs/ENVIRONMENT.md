@@ -90,7 +90,7 @@ META_ACCESS_TOKEN=your-access-token
 META_WABA_VERIFY_TOKEN=your-verify-token
 
 # App secret for signature validation
-META_WABA_APP_SECRET=your-app-secret
+META_APP_SECRET=your-app-secret
 ```
 
 ### **Legacy Support (Deprecated)**

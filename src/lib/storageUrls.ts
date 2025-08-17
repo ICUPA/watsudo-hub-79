@@ -1,15 +1,39 @@
+// Storage URL utilities for Supabase
+// Environment variables for Supabase configuration
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-// Canonical bucket names
-// Supabase configuration (client-side public credentials)
-const supabaseUrl = import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
+// Validate required environment variables
 if (!supabaseUrl) {
-  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable');
+  throw new Error("Missing VITE_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL environment variable");
 }
+
 if (!supabaseKey) {
-  throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable');
+  throw new Error("Missing VITE_SUPABASE_ANON_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable");
 }
+
+export const storageUrls = {
+  supabaseUrl,
+  supabaseKey,
+  
+  // Helper function to get storage URL for a bucket and path
+  getStorageUrl: (bucket: string, path: string): string => {
+    return `${supabaseUrl}/storage/v1/object/public/${bucket}/${path}`;
+  },
+  
+  // Helper function to get signed URL for private files
+  getSignedUrl: async (bucket: string, path: string, expiresIn: number = 3600): Promise<string | null> => {
+    try {
+      // This would need to be implemented with the Supabase client
+      // For now, return null to indicate this needs to be implemented
+      console.warn("getSignedUrl not implemented - requires Supabase client");
+      return null;
+    } catch (error) {
+      console.error("Error generating signed URL:", error);
+      return null;
+    }
+  }
+};
 
 // Canonical bucket names
 export const BUCKETS = {

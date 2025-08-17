@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.223.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { normalizePhone } from "../_shared/wa.ts"; // placeholder import for future use
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,25 +20,56 @@ serve(async (req) => {
 
     console.log('Searching for drivers:', { latitude, longitude, radius_km, vehicle_type });
 
-    // Query nearby drivers via PostGIS RPC
-    const { data: drivers, error: rpcError } = await sb.rpc('nearby_drivers', {
+    // Query nearby active drivers using PostGIS
+    const { data: drivers, error } = await sb.rpc('nearby_drivers', {
       lat: latitude,
       lng: longitude,
       km: radius_km
     });
-    if (rpcError) throw rpcError;
 
-    // Simplified formatting
-    const formatted = (drivers || []).map(d => ({
-      driver_id: d.driver_id,
-      distance_km: Math.round(d.distance_km * 10) / 10,
-      eta_minutes: Math.ceil(d.distance_km * 2)
+    if (error) {
+      console.error('Database error:', error);
+      throw error;
+    }
+
+    console.log('Found drivers:', drivers?.length || 0);
+
+    // Filter by vehicle type if specified
+    let filteredDrivers = drivers || [];
+    if (vehicle_type) {
+      const { data: driverVehicles } = await sb
+        .from('drivers')
+        .select(`
+          id,
+          driver_features,
+          profiles!drivers_user_id_fkey(wa_phone, wa_name)
+        `)
+        .in('id', filteredDrivers.map(d => d.driver_id));
+
+      filteredDrivers = filteredDrivers.filter(driver => {
+        const driverData = driverVehicles?.find(dv => dv.id === driver.driver_id);
+        const vehicleTypes = driverData?.driver_features?.vehicle_types || [];
+        return vehicleTypes.includes(vehicle_type);
+      });
+    }
+
+    // Format response
+    const formattedDrivers = filteredDrivers.map(driver => ({
+      driver_id: driver.driver_id,
+      distance_km: Math.round(driver.distance_km * 10) / 10,
+      wa_phone: driver.wa_phone,
+      wa_name: driver.wa_name || 'Driver',
+      rating: 5.0, // Default rating
+      eta_minutes: Math.ceil(driver.distance_km * 2) // Rough estimate
     }));
-    
-    return new Response(
-      JSON.stringify({ success: true, drivers: formatted.slice(0, 10), total_found: formatted.length }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+
+    return new Response(JSON.stringify({
+      success: true,
+      drivers: formattedDrivers.slice(0, 10), // Limit to top 10
+      total_found: formattedDrivers.length
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
 
   } catch (error) {
     console.error('Nearby drivers error:', error);
