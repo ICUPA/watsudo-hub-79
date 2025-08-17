@@ -16,7 +16,11 @@ const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
-// Canonical environment variables with legacy fallbacks
+// Canonical environment variables (with fallbacks) and runtime settings
+const META_WABA_ID = Deno.env.get("META_WABA_ID")!;
+const TIMEZONE = Deno.env.get("TIMEZONE") || "Africa/Kigali";
+
+// Canonical WhatsApp variables with legacy fallbacks
 const WABA_PHONE_ID = Deno.env.get("META_PHONE_NUMBER_ID") || Deno.env.get("WHATSAPP_PHONE_NUMBER_ID")!;
 const WABA_VERIFY = Deno.env.get("META_WABA_VERIFY_TOKEN") || Deno.env.get("WHATSAPP_VERIFY_TOKEN")!;
 const WABA_TOKEN = Deno.env.get("META_ACCESS_TOKEN") || Deno.env.get("WHATSAPP_ACCESS_TOKEN")!;
@@ -475,18 +479,35 @@ Deno.serve(async (req) => {
             }
             
             if (iid === "INSURANCE") {
+              // Start insurance flow: check for an existing vehicle
               await setState(session.id, STATES.INS_CHECK_VEHICLE, {});
-              // Check for existing vehicle
-              const { data: vs } = await sb.from("vehicles").select("*").eq("user_id", user.id).limit(1);
-              if (!vs?.length) {
+              const { data: vehicles, error: vehErr } = await sb
+                .from("vehicles")
+                .select("id,plate")
+                .eq("user_id", user.id)
+                .limit(1);
+              if (vehErr) throw vehErr;
+              if (!vehicles?.length) {
                 await setState(session.id, STATES.INS_COLLECT_DOCS, {});
-                await waClient.sendText(to, "Please send:\n1) Carte Jaune (photo/PDF)\n2) Old Insurance (photo/PDF)\nReply 'Agent' for human support.\nSend 'Done' when finished.");
+                await waClient.sendText(
+                  to,
+                  "📄 Please send vehicle documents (Carte Jaune + Old Insurance). Reply 'Agent' or 'Done' when ready."
+                );
               } else {
-                await setState(session.id, STATES.INS_CHOOSE_START, { vehicle_id: vs[0].id, plate: vs[0].plate });
-                await waClient.sendButtons(to, `Insurance for ${vs[0].plate ?? 'your vehicle'} — Start date?`, [
-                  { id: "START_TODAY", title: "Today" },
-                  { id: "START_PICK", title: "Pick date" }
-                ]);
+                const v = vehicles[0];
+                await setState(
+                  session.id,
+                  STATES.INS_CHOOSE_START,
+                  { vehicle_id: v.id, plate: v.plate }
+                );
+                await waClient.sendButtons(
+                  to,
+                  `Insurance for ${v.plate} — Choose start:`,
+                  [
+                    { id: "START_TODAY", title: "Today" },
+                    { id: "START_PICK", title: "Pick Date" }
+                  ]
+                );
               }
               hasProcessedMessage = true;
               continue;
