@@ -15,7 +15,7 @@ export default defineConfig({
     'process.env': {},
   },
   server: {
-    port: 3000,
+    port: 8080,
     host: true,
     // Security headers for development
     headers: {
@@ -38,17 +38,4 @@ export default defineConfig({
   },
   // Environment variable handling
   envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
-  test: {
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
-    globals: true,
-    exclude: [
-      'node_modules',
-      'dist',
-      /tests\/e2e\/.*$/,
-    ],
-    coverage: {
-      reporter: ['text', 'html'],
-    },
-  },
 })
