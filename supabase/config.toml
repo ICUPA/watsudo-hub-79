@@ -24,3 +24,12 @@ verify_jwt = false
 
 [functions.whatsapp-admin-bridge]
 verify_jwt = false
+
+[functions.ocr_worker]
+verify_jwt = false
+
+[functions.maintenance_worker]
+verify_jwt = false
+
+[functions.health_monitor]
+verify_jwt = false
