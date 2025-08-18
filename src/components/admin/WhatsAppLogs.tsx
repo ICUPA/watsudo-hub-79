@@ -1,205 +1,311 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Filter, MessageSquare, Phone } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
+
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { RefreshCw, MessageCircle, Phone, Clock } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface WhatsAppLog {
   id: string;
-  user_id?: string;
+  direction: 'in' | 'out';
   phone_number: string;
-  direction: string;
   message_type: string;
-  message_content?: string;
-  metadata?: any;
+  message_content: string;
+  message_id: string;
   status: string;
+  created_at: string;
+  payload: any;
+}
+
+interface WhatsAppConversation {
+  id: string;
+  phone_number: string;
+  current_step: string;
+  conversation_data: any;
+  last_activity_at: string;
   created_at: string;
 }
 
-export function WhatsAppLogs() {
-  const [messages, setMessages] = useState<WhatsAppLog[]>([]);
+export default function WhatsAppLogs() {
+  const [logs, setLogs] = useState<WhatsAppLog[]>([]);
+  const [conversations, setConversations] = useState<WhatsAppConversation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [directionFilter, setDirectionFilter] = useState<'all' | 'inbound' | 'outbound'>('all');
-  const [selectedMessage, setSelectedMessage] = useState<WhatsAppLog | null>(null);
+  const [activeTab, setActiveTab] = useState<'messages' | 'conversations'>('messages');
 
   useEffect(() => {
-    loadMessages();
+    fetchData();
+    
+    // Set up real-time subscriptions
+    const logsSubscription = supabase
+      .channel('whatsapp_logs')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'whatsapp_logs'
+      }, () => {
+        fetchLogs();
+      })
+      .subscribe();
+
+    const conversationsSubscription = supabase
+      .channel('whatsapp_conversations')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'whatsapp_conversations'
+      }, () => {
+        fetchConversations();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(logsSubscription);
+      supabase.removeChannel(conversationsSubscription);
+    };
   }, []);
 
-  const loadMessages = async () => {
+  const fetchData = async () => {
+    setLoading(true);
+    await Promise.all([fetchLogs(), fetchConversations()]);
+    setLoading(false);
+  };
+
+  const fetchLogs = async () => {
     try {
-      setLoading(true);
       const { data, error } = await supabase
-        .from("whatsapp_logs")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(100);
-      
+        .from('whatsapp_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
       if (error) throw error;
-      setMessages(data || []);
+      setLogs(data || []);
     } catch (error) {
-      console.error('Error loading messages:', error);
-      toast.error("Failed to load WhatsApp logs");
-    } finally {
-      setLoading(false);
+      console.error('Error fetching logs:', error);
+      toast.error('Failed to fetch WhatsApp logs');
     }
   };
 
-  const filteredMessages = messages.filter(message => {
-    const matchesSearch = !searchQuery || 
-      message.phone_number?.includes(searchQuery) ||
-      message.message_content?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      JSON.stringify(message.metadata).toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesDirection = directionFilter === 'all' || message.direction === directionFilter;
-    
-    return matchesSearch && matchesDirection;
-  });
+  const fetchConversations = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('whatsapp_conversations')
+        .select('*')
+        .order('last_activity_at', { ascending: false })
+        .limit(20);
 
-  const getMessagePreview = (message: WhatsAppLog) => {
-    if (message.message_content) {
-      return message.message_content.length > 100 
-        ? message.message_content.slice(0, 100) + "..."
-        : message.message_content;
+      if (error) throw error;
+      setConversations(data || []);
+    } catch (error) {
+      console.error('Error fetching conversations:', error);
+      toast.error('Failed to fetch conversations');
     }
-    return `${message.message_type} message`;
   };
+
+  const testWebhook = async () => {
+    try {
+      const webhookUrl = `${window.location.origin}/functions/v1/whatsapp`;
+      const testPayload = {
+        object: 'whatsapp_business_account',
+        entry: [{
+          id: 'test',
+          changes: [{
+            value: {
+              messaging_product: 'whatsapp',
+              metadata: { display_phone_number: 'test', phone_number_id: 'test' },
+              contacts: [{
+                profile: { name: 'Test User' },
+                wa_id: '1234567890'
+              }],
+              messages: [{
+                from: '1234567890',
+                id: 'test_message_id',
+                timestamp: Date.now().toString(),
+                text: { body: 'Test message' },
+                type: 'text'
+              }]
+            },
+            field: 'messages'
+          }]
+        }]
+      };
+
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(testPayload)
+      });
+
+      if (response.ok) {
+        toast.success('Test webhook sent successfully');
+        fetchData();
+      } else {
+        toast.error('Webhook test failed');
+      }
+    } catch (error) {
+      toast.error('Error testing webhook');
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString();
+  };
+
+  const getStatusBadge = (status: string, direction?: string) => {
+    const color = status === 'sent' || status === 'received' ? 'default' : 
+                 status === 'failed' || status === 'error' ? 'destructive' : 'secondary';
+    return <Badge variant={color as any}>{status}</Badge>;
+  };
+
+  const getDirectionBadge = (direction: string) => {
+    return (
+      <Badge variant={direction === 'in' ? 'outline' : 'default'}>
+        {direction === 'in' ? '↓ IN' : '↑ OUT'}
+      </Badge>
+    );
+  };
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-center justify-center">
+            <RefreshCw className="h-6 w-6 animate-spin" />
+            <span className="ml-2">Loading WhatsApp data...</span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-3xl font-bold">WhatsApp Message Logs</h2>
-        <Button onClick={loadMessages}>Refresh</Button>
-      </div>
-
-      <div className="flex gap-4 items-center">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search messages, users, phone numbers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-          />
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">WhatsApp Integration</h2>
+        <div className="flex gap-2">
+          <Button onClick={testWebhook} variant="outline">
+            Test Webhook
+          </Button>
+          <Button onClick={fetchData} variant="outline">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
         </div>
-        
-        <Select value={directionFilter} onValueChange={(value: any) => setDirectionFilter(value)}>
-          <SelectTrigger className="w-40">
-            <Filter className="h-4 w-4 mr-2" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Messages</SelectItem>
-            <SelectItem value="inbound">Incoming</SelectItem>
-            <SelectItem value="outbound">Outgoing</SelectItem>
-          </SelectContent>
-        </Select>
       </div>
 
-      {loading ? (
-        <div className="text-center py-8">Loading messages...</div>
-      ) : (
-        <div className="space-y-4">
-          {filteredMessages.map((message) => (
-            <Card key={message.id}>
-              <CardHeader>
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-2">
-                    {message.direction === 'inbound' ? (
-                      <MessageSquare className="h-4 w-4 text-blue-500" />
-                    ) : (
-                      <Phone className="h-4 w-4 text-green-500" />
+      <div className="flex space-x-1 mb-4">
+        <Button
+          variant={activeTab === 'messages' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('messages')}
+          className="flex items-center gap-2"
+        >
+          <MessageCircle className="h-4 w-4" />
+          Recent Messages ({logs.length})
+        </Button>
+        <Button
+          variant={activeTab === 'conversations' ? 'default' : 'outline'}
+          onClick={() => setActiveTab('conversations')}
+          className="flex items-center gap-2"
+        >
+          <Phone className="h-4 w-4" />
+          Active Conversations ({conversations.length})
+        </Button>
+      </div>
+
+      {activeTab === 'messages' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent WhatsApp Messages</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {logs.length === 0 ? (
+              <div className="text-center py-8">
+                <MessageCircle className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                <p className="text-gray-500">No messages found. Messages will appear here when users interact with your WhatsApp bot.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {logs.map((log) => (
+                  <div key={log.id} className="border rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        {getDirectionBadge(log.direction)}
+                        {getStatusBadge(log.status, log.direction)}
+                        <Badge variant="secondary">{log.message_type}</Badge>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <Clock className="h-3 w-3" />
+                        {formatDate(log.created_at)}
+                      </div>
+                    </div>
+                    
+                    {log.phone_number && (
+                      <div className="text-sm text-gray-600 mb-2">
+                        <Phone className="h-3 w-3 inline mr-1" />
+                        {log.phone_number}
+                      </div>
                     )}
-                    <div>
-                      <h4 className="font-medium">
-                        {message.phone_number}
-                      </h4>
-                      <p className="text-sm text-muted-foreground">
-                        {message.message_type}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <Badge variant={message.direction === 'inbound' ? 'default' : 'secondary'}>
-                      {message.direction === 'inbound' ? 'Incoming' : 'Outgoing'}
-                    </Badge>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {new Date(message.created_at).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm mb-2 truncate">
-                  {getMessagePreview(message)}
-                </p>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      View Full Message
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-4xl">
-                    <DialogHeader>
-                      <DialogTitle>Message Details</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <h4 className="font-medium">Direction</h4>
-                          <p className="text-sm">{message.direction}</p>
-                        </div>
-                        <div>
-                          <h4 className="font-medium">Timestamp</h4>
-                          <p className="text-sm">{new Date(message.created_at).toLocaleString()}</p>
-                        </div>
-                        <div>
-                          <h4 className="font-medium">Phone</h4>
-                          <p className="text-sm">{message.phone_number}</p>
-                        </div>
-                        <div>
-                          <h4 className="font-medium">Type</h4>
-                          <p className="text-sm">{message.message_type}</p>
-                        </div>
+                    
+                    {log.message_content && (
+                      <div className="bg-gray-50 p-2 rounded text-sm">
+                        {log.message_content}
                       </div>
-                      <div>
-                        <h4 className="font-medium mb-2">Message Content</h4>
-                        <div className="border rounded p-4 bg-muted/20">
-                          <p className="text-sm">{message.message_content || "No content"}</p>
-                        </div>
-                      </div>
-                      {message.metadata && (
-                        <div>
-                          <h4 className="font-medium mb-2">Metadata</h4>
-                          <ScrollArea className="h-96 w-full border rounded p-4">
-                            <pre className="text-xs">
-                              {JSON.stringify(message.metadata, null, 2)}
-                            </pre>
-                          </ScrollArea>
-                        </div>
-                      )}
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </CardContent>
-            </Card>
-          ))}
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
-          {filteredMessages.length === 0 && (
-            <Card>
-              <CardContent className="text-center py-8">
-                <p className="text-muted-foreground">No messages found.</p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+      {activeTab === 'conversations' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Active Conversations</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {conversations.length === 0 ? (
+              <div className="text-center py-8">
+                <Phone className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                <p className="text-gray-500">No active conversations found. Conversations will appear here when users interact with your WhatsApp bot.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {conversations.map((conv) => (
+                  <div key={conv.id} className="border rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4" />
+                        <span className="font-medium">{conv.phone_number}</span>
+                        <Badge variant="outline">{conv.current_step}</Badge>
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        Last activity: {formatDate(conv.last_activity_at)}
+                      </div>
+                    </div>
+                    
+                    {conv.conversation_data?.contact_name && (
+                      <div className="text-sm text-gray-600 mb-2">
+                        Contact: {conv.conversation_data.contact_name}
+                      </div>
+                    )}
+                    
+                    {conv.conversation_data?.last_message && (
+                      <div className="bg-gray-50 p-2 rounded text-sm">
+                        Last message: {conv.conversation_data.last_message}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   );

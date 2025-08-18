@@ -1,3 +1,4 @@
+
 project_id = "lgicrnzvnbmsnxhzytro"
 
 [api]
@@ -7,13 +8,13 @@ schemas = ["public", "graphql_public"]
 extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
+[functions.whatsapp]
+verify_jwt = false
+
 [functions.generate-qr]
 verify_jwt = false
 
 [functions.process-vehicle-ocr]
-verify_jwt = false
-
-[functions.whatsapp]
 verify_jwt = false
 
 [functions.admin-api]

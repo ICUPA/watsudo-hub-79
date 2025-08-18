@@ -727,43 +727,40 @@ export type Database = {
       }
       whatsapp_logs: {
         Row: {
-          created_at: string
-          direction: string
-          id: string
+          created_at: string | null
+          direction: string | null
+          id: number
           message_content: string | null
           message_id: string | null
-          message_type: string
+          message_type: string | null
           metadata: Json | null
           payload: Json | null
-          phone_number: string
-          status: string
-          user_id: string | null
+          phone_number: string | null
+          status: string | null
         }
         Insert: {
-          created_at?: string
-          direction: string
-          id?: string
+          created_at?: string | null
+          direction?: string | null
+          id?: number
           message_content?: string | null
           message_id?: string | null
-          message_type: string
+          message_type?: string | null
           metadata?: Json | null
           payload?: Json | null
-          phone_number: string
-          status?: string
-          user_id?: string | null
+          phone_number?: string | null
+          status?: string | null
         }
         Update: {
-          created_at?: string
-          direction?: string
-          id?: string
+          created_at?: string | null
+          direction?: string | null
+          id?: number
           message_content?: string | null
           message_id?: string | null
-          message_type?: string
+          message_type?: string | null
           metadata?: Json | null
           payload?: Json | null
-          phone_number?: string
-          status?: string
-          user_id?: string | null
+          phone_number?: string | null
+          status?: string | null
         }
         Relationships: []
       }
