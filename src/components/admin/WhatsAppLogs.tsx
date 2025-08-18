@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +7,7 @@ import { RefreshCw, MessageCircle, Phone, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface WhatsAppLog {
-  id: number; // Changed from string to number
+  id: number;
   direction: 'in' | 'out';
   phone_number: string | null;
   message_type: string | null;
@@ -83,7 +82,12 @@ export default function WhatsAppLogs() {
         .limit(50);
 
       if (error) throw error;
-      setLogs(data || []);
+      // Type cast the data to ensure direction is properly typed
+      const typedLogs = (data || []).map(log => ({
+        ...log,
+        direction: (log.direction === 'in' || log.direction === 'out') ? log.direction : 'in' as 'in' | 'out'
+      }));
+      setLogs(typedLogs);
     } catch (error) {
       console.error('Error fetching logs:', error);
       toast.error('Failed to fetch WhatsApp logs');
