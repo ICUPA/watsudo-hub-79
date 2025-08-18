@@ -10,15 +10,17 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 
 interface WhatsAppLog {
-  id: string;
+  id: number;
   created_at: string;
-  phone_number: string;
+  phone_number: string | null;
   direction: string;
-  message_type: string;
-  message_content: string;
-  status: string;
+  message_type: string | null;
+  message_content: string | null;
+  status: string | null;
   metadata: any;
   user_id?: string;
+  payload?: any;
+  message_id?: string | null;
 }
 
 interface WhatsAppConversation {
@@ -78,7 +80,9 @@ export function WhatsAppWebhookLogs() {
     fetchData();
   }, []);
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string | null) => {
+    if (!status) return 'bg-gray-500/20 text-gray-700 border-gray-500/30';
+    
     switch (status.toLowerCase()) {
       case 'sent': return 'bg-green-500/20 text-green-700 border-green-500/30';
       case 'delivered': return 'bg-blue-500/20 text-blue-700 border-blue-500/30';
@@ -96,12 +100,9 @@ export function WhatsAppWebhookLogs() {
     );
   };
 
-  const truncateMessage = (message: string, maxLength: number = 100) => {
-    if (message.length <= maxLength) return message;
-    return message.substring(0, maxLength) + '...';
-  };
-
-  const formatMessageContent = (content: string, type: string) => {
+  const formatMessageContent = (content: string | null, type: string | null) => {
+    if (!content) return 'No content';
+    
     try {
       if (type === 'interactive' || content.startsWith('{')) {
         const parsed = JSON.parse(content);
@@ -173,20 +174,20 @@ export function WhatsAppWebhookLogs() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <Phone className="h-3 w-3 text-muted-foreground" />
-                          <span className="font-mono text-sm">{log.phone_number}</span>
+                          <span className="font-mono text-sm">{log.phone_number || 'Unknown'}</span>
                           <Badge variant="outline" className="text-xs">
-                            {log.message_type}
+                            {log.message_type || 'unknown'}
                           </Badge>
                           <Badge 
                             variant="outline" 
                             className={`text-xs ${getStatusColor(log.status)}`}
                           >
-                            {log.status}
+                            {log.status || 'unknown'}
                           </Badge>
                         </div>
                         
                         <p className="text-sm text-muted-foreground break-words">
-                          {formatMessageContent(log.message_content || '', log.message_type)}
+                          {formatMessageContent(log.message_content, log.message_type)}
                         </p>
                         
                         <p className="text-xs text-muted-foreground mt-1">

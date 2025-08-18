@@ -8,15 +8,16 @@ import { RefreshCw, MessageCircle, Phone, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface WhatsAppLog {
-  id: string;
+  id: number; // Changed from string to number
   direction: 'in' | 'out';
-  phone_number: string;
-  message_type: string;
-  message_content: string;
-  message_id: string;
-  status: string;
+  phone_number: string | null;
+  message_type: string | null;
+  message_content: string | null;
+  message_id: string | null;
+  status: string | null;
   created_at: string;
   payload: any;
+  metadata?: any;
 }
 
 interface WhatsAppConversation {
@@ -26,6 +27,7 @@ interface WhatsAppConversation {
   conversation_data: any;
   last_activity_at: string;
   created_at: string;
+  user_id?: string;
 }
 
 export default function WhatsAppLogs() {
@@ -106,47 +108,42 @@ export default function WhatsAppLogs() {
 
   const testWebhook = async () => {
     try {
-      const webhookUrl = `${window.location.origin}/functions/v1/whatsapp`;
-      const testPayload = {
-        object: 'whatsapp_business_account',
-        entry: [{
-          id: 'test',
-          changes: [{
-            value: {
-              messaging_product: 'whatsapp',
-              metadata: { display_phone_number: 'test', phone_number_id: 'test' },
-              contacts: [{
-                profile: { name: 'Test User' },
-                wa_id: '1234567890'
-              }],
-              messages: [{
-                from: '1234567890',
-                id: 'test_message_id',
-                timestamp: Date.now().toString(),
-                text: { body: 'Test message' },
-                type: 'text'
-              }]
-            },
-            field: 'messages'
+      const response = await supabase.functions.invoke('whatsapp', {
+        body: {
+          object: 'whatsapp_business_account',
+          entry: [{
+            id: 'test_entry',
+            changes: [{
+              value: {
+                messaging_product: 'whatsapp',
+                metadata: { display_phone_number: '1234567890', phone_number_id: 'test_id' },
+                contacts: [{
+                  profile: { name: 'Test User' },
+                  wa_id: '1234567890'
+                }],
+                messages: [{
+                  from: '1234567890',
+                  id: 'test_message_' + Date.now(),
+                  timestamp: Math.floor(Date.now() / 1000).toString(),
+                  text: { body: 'Hello, this is a test message!' },
+                  type: 'text'
+                }]
+              },
+              field: 'messages'
+            }]
           }]
-        }]
-      };
-
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(testPayload)
+        }
       });
 
-      if (response.ok) {
-        toast.success('Test webhook sent successfully');
-        fetchData();
+      if (response.error) {
+        console.error('Webhook test error:', response.error);
+        toast.error('Webhook test failed: ' + response.error.message);
       } else {
-        toast.error('Webhook test failed');
+        toast.success('Test message sent successfully');
+        fetchData();
       }
     } catch (error) {
+      console.error('Error testing webhook:', error);
       toast.error('Error testing webhook');
     }
   };
@@ -155,10 +152,12 @@ export default function WhatsAppLogs() {
     return new Date(dateString).toLocaleString();
   };
 
-  const getStatusBadge = (status: string, direction?: string) => {
-    const color = status === 'sent' || status === 'received' ? 'default' : 
-                 status === 'failed' || status === 'error' ? 'destructive' : 'secondary';
-    return <Badge variant={color as any}>{status}</Badge>;
+  const getStatusBadge = (status: string | null) => {
+    if (!status) return <Badge variant="secondary">unknown</Badge>;
+    
+    const variant = status === 'sent' || status === 'received' ? 'default' : 
+                   status === 'failed' || status === 'error' ? 'destructive' : 'secondary';
+    return <Badge variant={variant}>{status}</Badge>;
   };
 
   const getDirectionBadge = (direction: string) => {
@@ -234,8 +233,8 @@ export default function WhatsAppLogs() {
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         {getDirectionBadge(log.direction)}
-                        {getStatusBadge(log.status, log.direction)}
-                        <Badge variant="secondary">{log.message_type}</Badge>
+                        {getStatusBadge(log.status)}
+                        <Badge variant="secondary">{log.message_type || 'unknown'}</Badge>
                       </div>
                       <div className="flex items-center gap-2 text-sm text-gray-500">
                         <Clock className="h-3 w-3" />
