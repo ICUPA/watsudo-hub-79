@@ -106,6 +106,33 @@ export type Database = {
           },
         ]
       }
+      driver_locations: {
+        Row: {
+          driver_id: string
+          geom: unknown | null
+          rating: number | null
+          updated_at: string | null
+          wa_id: string | null
+          wa_name: string | null
+        }
+        Insert: {
+          driver_id?: string
+          geom?: unknown | null
+          rating?: number | null
+          updated_at?: string | null
+          wa_id?: string | null
+          wa_name?: string | null
+        }
+        Update: {
+          driver_id?: string
+          geom?: unknown | null
+          rating?: number | null
+          updated_at?: string | null
+          wa_id?: string | null
+          wa_name?: string | null
+        }
+        Relationships: []
+      }
       drivers: {
         Row: {
           created_at: string
@@ -190,6 +217,30 @@ export type Database = {
           is_active?: boolean
           name?: string
           price?: number
+        }
+        Relationships: []
+      }
+      insurance_leads: {
+        Row: {
+          created_at: string | null
+          id: string
+          phone_number: string | null
+          state: Json | null
+          status: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          phone_number?: string | null
+          state?: Json | null
+          status?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          phone_number?: string | null
+          state?: Json | null
+          status?: string | null
         }
         Relationships: []
       }
@@ -427,6 +478,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      qr_defaults: {
+        Row: {
+          default_type: string | null
+          momo_code: string | null
+          momo_phone: string | null
+          updated_at: string | null
+          wa_id: string
+        }
+        Insert: {
+          default_type?: string | null
+          momo_code?: string | null
+          momo_phone?: string | null
+          updated_at?: string | null
+          wa_id: string
+        }
+        Update: {
+          default_type?: string | null
+          momo_code?: string | null
+          momo_phone?: string | null
+          updated_at?: string | null
+          wa_id?: string
+        }
+        Relationships: []
       }
       qr_generations: {
         Row: {
@@ -1313,6 +1388,16 @@ export type Database = {
       jsonb: {
         Args: { "": unknown }
         Returns: Json
+      }
+      list_nearby_drivers: {
+        Args: { lat: number; limit_n: number; lon: number; radius_m: number }
+        Returns: {
+          distance_km: number
+          driver_id: string
+          eta_minutes: number
+          rating: number
+          wa_name: string
+        }[]
       }
       longtransactionsenabled: {
         Args: Record<PropertyKey, never>
