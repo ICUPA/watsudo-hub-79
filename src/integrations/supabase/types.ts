@@ -145,6 +145,30 @@ export type Database = {
         }
         Relationships: []
       }
+      flow_submissions: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string | null
+          payload: Json | null
+          wa_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind?: string | null
+          payload?: Json | null
+          wa_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string | null
+          payload?: Json | null
+          wa_id?: string | null
+        }
+        Relationships: []
+      }
       insurance_addons: {
         Row: {
           description: string | null
