@@ -39,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAdmin = profile?.role === 'admin';
   const isDriver = profile?.role === 'driver';
 
-  // Enhanced profile loading with fallback creation
+  // Enhanced profile loading with better error handling
   const loadProfile = async (userId: string, retryCount = 0): Promise<Profile | null> => {
     try {
       console.log(`Loading profile for user ${userId}, attempt ${retryCount + 1}`);
@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Create profile for users who don't have one
+  // Improved profile creation with duplicate handling
   const createMissingProfile = async (userId: string): Promise<boolean> => {
     try {
       console.log('Creating missing profile for user:', userId);
@@ -93,19 +93,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userData = authUser.user;
       const metadata = userData.user_metadata || {};
       
+      // Generate a unique phone number or use email as fallback
+      let waPhone = metadata.phone || userData.phone || '';
+      
+      // If no phone, use email prefix with a timestamp to ensure uniqueness
+      if (!waPhone) {
+        const emailPrefix = userData.email?.split('@')[0] || 'user';
+        waPhone = `+${emailPrefix}${Date.now()}`;
+      }
+      
+      // Ensure the phone number is unique by checking existing profiles
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('wa_phone')
+        .eq('wa_phone', waPhone)
+        .maybeSingle();
+      
+      // If phone already exists, make it unique
+      if (existingProfile) {
+        waPhone = `${waPhone}_${userId.slice(0, 8)}`;
+      }
+      
       const { error } = await supabase
         .from('profiles')
         .insert({
           user_id: userId,
-          wa_phone: metadata.phone || userData.phone || '',
-          wa_name: metadata.full_name || metadata.name || userData.email?.split('@')[0] || '',
+          wa_phone: waPhone,
+          wa_name: metadata.full_name || metadata.name || userData.email?.split('@')[0] || 'User',
           role: (metadata.role as 'user' | 'admin' | 'driver') || 'user',
           locale: 'en'
         });
 
       if (error) {
         console.error('Error creating profile:', error);
-        return false;
+        // If it's still a duplicate key error, try one more time with a different approach
+        if (error.message.includes('duplicate key')) {
+          console.log('Duplicate key error, trying with user ID as phone');
+          const { error: retryError } = await supabase
+            .from('profiles')
+            .insert({
+              user_id: userId,
+              wa_phone: `+user_${userId.replace(/-/g, '').slice(0, 12)}`,
+              wa_name: metadata.full_name || metadata.name || userData.email?.split('@')[0] || 'User',
+              role: (metadata.role as 'user' | 'admin' | 'driver') || 'user',
+              locale: 'en'
+            });
+          
+          if (retryError) {
+            console.error('Retry error creating profile:', retryError);
+            return false;
+          }
+        } else {
+          return false;
+        }
       }
 
       console.log('Profile created successfully');
