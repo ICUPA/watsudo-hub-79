@@ -38,6 +38,170 @@ export type Database = {
         }
         Relationships: []
       }
+      admin_queue: {
+        Row: {
+          basket_id: string | null
+          created_at: string | null
+          id: string
+          kind: string | null
+          payload: Json | null
+          ref_id: string | null
+          status: string | null
+          user_id: string | null
+        }
+        Insert: {
+          basket_id?: string | null
+          created_at?: string | null
+          id?: string
+          kind?: string | null
+          payload?: Json | null
+          ref_id?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          basket_id?: string | null
+          created_at?: string | null
+          id?: string
+          kind?: string | null
+          payload?: Json | null
+          ref_id?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      basket_members: {
+        Row: {
+          anon_code_cached: string | null
+          basket_id: string | null
+          id: string
+          joined_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          anon_code_cached?: string | null
+          basket_id?: string | null
+          id?: string
+          joined_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          anon_code_cached?: string | null
+          basket_id?: string | null
+          id?: string
+          joined_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "basket_members_basket_id_fkey"
+            columns: ["basket_id"]
+            isOneToOne: false
+            referencedRelation: "basket_totals"
+            referencedColumns: ["basket_id"]
+          },
+          {
+            foreignKeyName: "basket_members_basket_id_fkey"
+            columns: ["basket_id"]
+            isOneToOne: false
+            referencedRelation: "baskets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "basket_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      basket_types: {
+        Row: {
+          enabled: boolean | null
+          id: number
+          key: string | null
+          label: string | null
+          order: number | null
+        }
+        Insert: {
+          enabled?: boolean | null
+          id?: number
+          key?: string | null
+          label?: string | null
+          order?: number | null
+        }
+        Update: {
+          enabled?: boolean | null
+          id?: number
+          key?: string | null
+          label?: string | null
+          order?: number | null
+        }
+        Relationships: []
+      }
+      baskets: {
+        Row: {
+          collector_momo: string | null
+          created_at: string | null
+          creator_id: string | null
+          id: string
+          name: string
+          period_id: number | null
+          status: string | null
+          token: string | null
+          type_id: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          collector_momo?: string | null
+          created_at?: string | null
+          creator_id?: string | null
+          id?: string
+          name: string
+          period_id?: number | null
+          status?: string | null
+          token?: string | null
+          type_id?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          collector_momo?: string | null
+          created_at?: string | null
+          creator_id?: string | null
+          id?: string
+          name?: string
+          period_id?: number | null
+          status?: string | null
+          token?: string | null
+          type_id?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "baskets_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "baskets_period_id_fkey"
+            columns: ["period_id"]
+            isOneToOne: false
+            referencedRelation: "period_options"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "baskets_type_id_fkey"
+            columns: ["type_id"]
+            isOneToOne: false
+            referencedRelation: "basket_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_sessions: {
         Row: {
           context: Json
@@ -64,6 +228,74 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      contributions: {
+        Row: {
+          amount: number
+          anon_code: string | null
+          basket_id: string | null
+          contributor_user_id: string | null
+          created_at: string | null
+          decided_at: string | null
+          decided_by: string | null
+          id: string
+          note: string | null
+          status: string | null
+        }
+        Insert: {
+          amount: number
+          anon_code?: string | null
+          basket_id?: string | null
+          contributor_user_id?: string | null
+          created_at?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          note?: string | null
+          status?: string | null
+        }
+        Update: {
+          amount?: number
+          anon_code?: string | null
+          basket_id?: string | null
+          contributor_user_id?: string | null
+          created_at?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          note?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contributions_basket_id_fkey"
+            columns: ["basket_id"]
+            isOneToOne: false
+            referencedRelation: "basket_totals"
+            referencedColumns: ["basket_id"]
+          },
+          {
+            foreignKeyName: "contributions_basket_id_fkey"
+            columns: ["basket_id"]
+            isOneToOne: false
+            referencedRelation: "baskets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contributions_contributor_user_id_fkey"
+            columns: ["contributor_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contributions_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       driver_availability: {
         Row: {
@@ -220,6 +452,47 @@ export type Database = {
         }
         Relationships: []
       }
+      insurance_claims: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          docs: Json | null
+          id: string
+          incident_date: string | null
+          plate: string | null
+          status: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          docs?: Json | null
+          id?: string
+          incident_date?: string | null
+          plate?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          docs?: Json | null
+          id?: string
+          incident_date?: string | null
+          plate?: string | null
+          status?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insurance_claims_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       insurance_leads: {
         Row: {
           created_at: string | null
@@ -369,6 +642,27 @@ export type Database = {
           },
         ]
       }
+      message_templates: {
+        Row: {
+          id: number
+          key: string | null
+          locale: string | null
+          text: string | null
+        }
+        Insert: {
+          id?: number
+          key?: string | null
+          locale?: string | null
+          text?: string | null
+        }
+        Update: {
+          id?: number
+          key?: string | null
+          locale?: string | null
+          text?: string | null
+        }
+        Relationships: []
+      }
       pa_categories: {
         Row: {
           id: string
@@ -405,6 +699,33 @@ export type Database = {
           id?: number
           installments?: number
           name?: string
+        }
+        Relationships: []
+      }
+      period_options: {
+        Row: {
+          cron_hint: string | null
+          enabled: boolean | null
+          id: number
+          key: string | null
+          label: string | null
+          order: number | null
+        }
+        Insert: {
+          cron_hint?: string | null
+          enabled?: boolean | null
+          id?: number
+          key?: string | null
+          label?: string | null
+          order?: number | null
+        }
+        Update: {
+          cron_hint?: string | null
+          enabled?: boolean | null
+          id?: number
+          key?: string | null
+          label?: string | null
+          order?: number | null
         }
         Relationships: []
       }
@@ -571,6 +892,55 @@ export type Database = {
         }
         Relationships: []
       }
+      reminder_subscriptions: {
+        Row: {
+          basket_id: string | null
+          created_at: string | null
+          enabled: boolean | null
+          frequency: string | null
+          id: string
+          user_id: string | null
+        }
+        Insert: {
+          basket_id?: string | null
+          created_at?: string | null
+          enabled?: boolean | null
+          frequency?: string | null
+          id?: string
+          user_id?: string | null
+        }
+        Update: {
+          basket_id?: string | null
+          created_at?: string | null
+          enabled?: boolean | null
+          frequency?: string | null
+          id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reminder_subscriptions_basket_id_fkey"
+            columns: ["basket_id"]
+            isOneToOne: false
+            referencedRelation: "basket_totals"
+            referencedColumns: ["basket_id"]
+          },
+          {
+            foreignKeyName: "reminder_subscriptions_basket_id_fkey"
+            columns: ["basket_id"]
+            isOneToOne: false
+            referencedRelation: "baskets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reminder_subscriptions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ride_events: {
         Row: {
           created_at: string | null
@@ -666,6 +1036,39 @@ export type Database = {
         }
         Relationships: []
       }
+      users: {
+        Row: {
+          anon_code: string | null
+          created_at: string | null
+          id: string
+          language: string | null
+          momo_phone: string | null
+          notify: boolean | null
+          updated_at: string | null
+          wa_id: string | null
+        }
+        Insert: {
+          anon_code?: string | null
+          created_at?: string | null
+          id?: string
+          language?: string | null
+          momo_phone?: string | null
+          notify?: boolean | null
+          updated_at?: string | null
+          wa_id?: string | null
+        }
+        Update: {
+          anon_code?: string | null
+          created_at?: string | null
+          id?: string
+          language?: string | null
+          momo_phone?: string | null
+          notify?: boolean | null
+          updated_at?: string | null
+          wa_id?: string | null
+        }
+        Relationships: []
+      }
       vehicle_types: {
         Row: {
           code: string
@@ -746,6 +1149,58 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "vehicle_types"
             referencedColumns: ["code"]
+          },
+        ]
+      }
+      visibility_requests: {
+        Row: {
+          basket_id: string | null
+          created_at: string | null
+          decided_at: string | null
+          decided_by: string | null
+          id: string
+          note: string | null
+          status: string | null
+        }
+        Insert: {
+          basket_id?: string | null
+          created_at?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          note?: string | null
+          status?: string | null
+        }
+        Update: {
+          basket_id?: string | null
+          created_at?: string | null
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          note?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "visibility_requests_basket_id_fkey"
+            columns: ["basket_id"]
+            isOneToOne: false
+            referencedRelation: "basket_totals"
+            referencedColumns: ["basket_id"]
+          },
+          {
+            foreignKeyName: "visibility_requests_basket_id_fkey"
+            columns: ["basket_id"]
+            isOneToOne: false
+            referencedRelation: "baskets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "visibility_requests_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -865,6 +1320,14 @@ export type Database = {
       }
     }
     Views: {
+      basket_totals: {
+        Row: {
+          basket_id: string | null
+          contributions_count: number | null
+          total_approved: number | null
+        }
+        Relationships: []
+      }
       geography_columns: {
         Row: {
           coord_dimension: number | null
