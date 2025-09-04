@@ -25,3 +25,9 @@ verify_jwt = false
 
 [functions.whatsapp-admin-bridge]
 verify_jwt = false
+
+[functions.baskets-api]
+verify_jwt = false
+
+[functions.pay]
+verify_jwt = false
