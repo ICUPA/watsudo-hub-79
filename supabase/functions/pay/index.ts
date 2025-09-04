@@ -1,5 +1,4 @@
 // supabase/functions/pay/index.ts
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 
 const TEL = "tel:*182*8*1*669900%23"; // *182*8*1*669900# with # encoded as %23
 
@@ -20,11 +19,13 @@ const HTML = `<!doctype html>
 </body>
 </html>`;
 
-serve(() =>
-  new Response(HTML, {
+Deno.serve(async (req) => {
+  return new Response(HTML, {
     headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "public, max-age=300" // 5 minutes
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "public, max-age=300",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     },
-  }),
-);
+  });
+});
